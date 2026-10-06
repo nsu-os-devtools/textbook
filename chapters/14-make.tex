@@ -1,0 +1,167 @@
+% Глава: 14-make
+% Статус: наполнено (первый прогон).
+\chapter{Система сборки: make}
+\label{ch:14-make}
+
+\section{Зачем нужен make}
+
+Когда проект вырастает за один \cmd{gcc}, ручная сборка
+становится ненадёжной: легко забыть файл или пересобрать
+то, что не менялось. \textbf{make} --- система сборки:
+он смотрит на \emph{зависимости} (что из чего) и
+пересобирает \textbf{только изменившееся}.
+
+Выполняем сборку на своей ВМ: утилита \cmd{make} читает
+\fpath{Makefile} на сервере \fpath{pglab.nsu.ru} и пересобирает нужное.
+
+\section{Анатомия Makefile}
+
+Файл \fpath{Makefile} состоит из \textbf{правил}
+(rules):
+\begin{minted}[bgcolor=gray!6]{Makefile}
+target: prerequisites
+    recipe command
+\end{minted}
+
+\begin{itemize}
+  \item \textbf{target} --- что строим (файл или имя);
+  \item \textbf{prerequisites} --- от чего зависит;
+  \item \textbf{recipe} --- команды (всегда с \emph{табуляцией},
+    не с пробелами!).
+\end{itemize}
+
+\begin{warnbox}
+В листингах этой книги отступ рецепта показан \textbf{четырьмя
+пробелами} --- табуляцию внутри блока напечатать нельзя. В настоящем
+\file{Makefile} перед командой рецепта \textbf{обязательно стоит
+одна таб}: make с пробелами в начале строки не примет и выдаст
+ошибку \emph{missing separator}.
+\end{warnbox}
+
+Минимальный Makefile для \fpath{hello.c}:
+\begin{minted}[bgcolor=gray!6]{Makefile}
+CC = gcc
+CFLAGS = -Wall -Wextra -g
+
+hello: hello.c
+    $(CC) $(CFLAGS) -o hello hello.c
+
+clean:
+    rm -f hello
+\end{minted}
+
+\begin{warnbox}
+Рецепты в Makefile \textbf{обязаны} начинаться с табуляции.
+Пробелы --- синтаксическая ошибка. При копировании из
+редактора проверяйте, что это именно табы.
+\end{warnbox}
+
+\section{Переменные и автоматические переменные}
+
+Обычные переменные задаются как \cmd{CC = gcc}.
+Автоматические переменные зависят от текущего правила:
+\begin{center}
+\begin{tabular}{lp{0.6\linewidth}}
+\toprule
+\textbf{Переменная} & \textbf{Значение} \\
+\midrule
+\cmd{$@}   & целевой файл текущего правила \\
+\cmd{$<}   & первый из зависимостей \\
+\cmd{$^}   & все зависимости \\
+\cmd{$(CC)} & значение переменной \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Использование \cmd{\$@} и \cmd{\$<} укорачивает правила:
+\begin{minted}[bgcolor=gray!6]{Makefile}
+app: main.o util.o
+    $(CC) -o $@ $^
+\end{minted}
+
+\section{Паттерн-правила}
+
+Паттерн-правило описывает, как строить \emph{любой} файл
+по шаблону. Классический пример: из \fpath{.c} в \fpath{.o}:
+\begin{minted}[bgcolor=gray!6]{Makefile}
+%.o: %.c
+    $(CC) $(CFLAGS) -c $< -o $@
+\end{minted}
+
+\cmd{\%} --- заглушка, подставляющая имя.
+
+\section{Типовой Makefile для проекта}
+
+\begin{minted}[bgcolor=gray!6]{Makefile}
+CC      = gcc
+CFLAGS  = -Wall -Wextra -g
+SRCDIR  = src
+OBJDIR  = obj
+SRC     = $(wildcard $(SRCDIR)/*.c)
+OBJ     = $(SRC:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
+DEPS    = $(OBJ:.o=.d)
+
+all: app
+
+app: $(OBJ)
+    $(CC) $(CFLAGS) -o $@ $^
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+    $(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(OBJDIR):
+    mkdir -p $(OBJDIR)
+
+-include $(DEPS)
+
+clean:
+    rm -rf $(OBJDIR) app
+
+.PHONY: all clean
+\end{minted}
+
+Обратите внимание: \cmd{.PHONY} говорит make, что
+\cmd{all} и \cmd{clean} --- не файлы; это важно, если
+на диске появятся файлы с такими именами.
+
+\section{Полезные флаги \cmd{make}}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+make                 # целевая по умолчанию, обычно all
+make clean           # выполнить целевую clean
+make -n              # вывести команды без выполнения (dry run)
+make -j4             # запускать до 4 задач параллельно
+make -f other.mk     # использовать другой makefile
+make CC=clang        # переопределить переменную в командной строке
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \emph{missing separator} --- в рецепте пробелы
+    вместо табуляции;
+  \item Циклическая зависимость --- make останавливается
+    с ошибкой;
+  \item Пересборка каждый раз --- пропущена зависимость
+    (например, заголовочный файл); используйте
+    \cmd{-MMD -MP} для автоматического отслеживания;
+  \item \cmd{make clean} делает что-то лишнее --- проверьте,
+    что в рецепте только нужные команды.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+\cmd{make} --- стандарт сборки C-проектов
+(\nameref{ch:13-c-compilation}) и в Docker-образах
+(\nameref{ch:20-dockerfile}). Понимание зависимостей
+пригодится и в скриптах CI
+(\nameref{ch:26-ci}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Из чего состоит правило в Makefile?
+  \item Зачем \cmd{.PHONY}?
+  \item Чем \cmd{\$@} отличается от \cmd{\$<}?
+  \item Что делает \cmd{make -n}?
+  \item Как заставить make пересобирать проект при
+    изменении заголовочного файла?
+\end{enumerate}

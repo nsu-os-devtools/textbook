@@ -1,0 +1,115 @@
+% Глава: 22-docker-compose
+% Статус: наполнено (первый прогон).
+\chapter{Docker Compose}
+\label{ch:22-docker-compose}
+
+\section{Зачем Compose}
+
+Когда приложение --- это несколько контейнеров
+(веб, база данных, очередь), описывать их
+отдельными \cmd{docker run} неудобно.
+\textbf{Docker Compose} описывает всю систему в одном
+YAML-файле и запускает её одной командой.
+
+Оркеструем такие системы на своей ВМ: Compose поднимает
+все контейнеры на \fpath{pglab.nsu.ru} одной командой.
+
+\section{Анатомия \fpath{docker-compose.yml}}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+services:
+  web:
+    build: .
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://db:5432
+  db:
+    image: postgres:16
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: secret
+
+volumes:
+  dbdata:
+\end{minted}
+
+Ключевые поля:
+\begin{center}
+\begin{tabular}{lp{0.62\linewidth}}
+\toprule
+\textbf{Поле} & \textbf{Назначение} \\
+\midrule
+\cmd{services}      & словарь сервисов (контейнеров) \\
+\cmd{image}         & готовый образ \\
+\cmd{build}         & собрать из Dockerfile (путь) \\
+\cmd{ports}         & проброс портов (host:container) \\
+\cmd{volumes}       & тома (именованные или bind mount) \\
+\cmd{environment}   & переменные окружения \\
+\cmd{depends\_on}   & порядок запуска (запустит сначала) \\
+\cmd{networks}      & пользовательские сети \\
+\cmd{command}       & переопределить CMD образа \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Основные команды}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+docker compose up            # собрать при необходимости и запустить все сервисы
+docker compose up -d         # запустить в фоне
+docker compose ps            # список работающих сервисов
+docker compose logs web      # логи сервиса "web"
+docker compose exec web bash # открыть оболочку в сервисе "web"
+docker compose stop          # остановить все
+docker compose down          # остановить и удалить контейнеры
+docker compose down -v       # также удалить тома, осторожно!
+\end{minted}
+
+\section{Сети и DNS}
+
+Компоненты в одном compose-файле автоматически
+попадают в одну сеть; имя сервиса --- его DNS-имя:
+веб обращается к базе как \cmd{db} (не \cmd{localhost}).
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \cmd{depends\_on} --- только про
+    \emph{запуск}, не про \emph{готовность}: база может
+    ещё не быть готова принимать подключения, когда
+    стартует веб; используйте \cmd{healthcheck} или
+    retry в коде;
+  \item Порт занят на хосте --- \cmd{docker compose ps}
+    покажет; смените host-порт в \cmd{ports};
+  \item \cmd{docker compose down -v} удаляет тома и
+    данные --- используйте с осторожностью
+    (\nameref{ch:21-docker-data});
+  \item Несовместимые версии \cmd{compose} и
+    \cmd{docker} --- обновите инструмент.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Compose комбинирует Dockerfile
+(\nameref{ch:20-dockerfile}) и тома
+(\nameref{ch:21-docker-data}); ограничения ресурсов
+для каждого сервиса --- \nameref{ch:23-docker-resources};
+запуск нескольких контейнеров на хосте ---
+\nameref{ch:19-docker-basics}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Чем Compose удобнее, чем несколько
+    \cmd{docker run}?
+  \item Какие ключевые поля у сервиса в
+    \fpath{docker-compose.yml}?
+  \item Как запустить систему в фоне и посмотреть
+    логи одного сервиса?
+  \item Чем \cmd{depends\_on} не гарантирует
+    (и что нужно добавить)?
+  \item Как сервисам обращаться друг к другу по
+    имени?
+\end{enumerate}

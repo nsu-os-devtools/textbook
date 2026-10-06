@@ -1,0 +1,126 @@
+% Глава: 11-mc
+% Статус: наполнено (первый прогон).
+\chapter{Файловый менеджер: Midnight Commander}
+\label{ch:11-mc}
+
+\section{Зачем нужен}
+
+\cmd{mc} (Midnight Commander) --- терминальный файловый
+менеджер с «двухпанельным» интерфейсом. Полезен, когда
+файловые операции проще сделать «глазами», чем командами:
+сравнить две директории, переместить группу файлов,
+просмотреть файл встроенным просмотрщиком.
+
+Полезен, когда вы работаете с файлами на своей ВМ на
+\fpath{pglab.nsu.ru} и нужен быстрый «визуальный» контроль.
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.4cm]
+    \node[box, align=left, minimum width=4.5cm, minimum height=3.5cm] (left)
+      {ЛЕВАЯ ПАНЕЛЬ\\
+       \texttt{incoming/}\\
+       \texttt{a.txt}\\
+       \texttt{b.txt}};
+    \node[box, align=left, right=2.5cm of left, minimum width=4.5cm,
+          minimum height=3.5cm] (right)
+      {ПРАВАЯ ПАНЕЛЬ\\
+       \texttt{processed/}\\
+       \texttt{a.txt}};
+    \node[below=1.2cm of left, font=\small] {командная строка и меню внизу};
+  \end{tikzpicture}
+  \caption{Схема интерфейса Midnight Commander.}
+  \label{fig:mc}
+\end{figure}
+
+\section{Навигация}
+
+Внутри \cmd{mc}:
+\begin{itemize}
+  \item \cmd{Tab} --- переключить активную панель;
+  \item стрелки --- перемещение по списку;
+  \item \cmd{Enter} --- войти в каталог;
+  \item \cmd{Backspace} / \cmd{Alt+u} --- вверх;
+  \item \cmd{Ctrl+t} --- создать каталог;
+  \item \cmd{Alt+s} --- показать свойства файла;
+  \item \cmd{Alt+g} --- перейти по пути вручную;
+  \item \cmd{Alt+z} / \cmd{Alt+x} --- сжать / распаковать архив;
+  \item \cmd{F3} --- просмотр файла, \cmd{F4} --- открыть в редакторе.
+\end{itemize}
+
+\section{Файловые операции}
+
+Выделяйте файлы клавишей \cmd{Insert} (или \cmd{Space}) и
+используйте \cmd{F5} (копировать), \cmd{F6} (переместить/
+переименовать), \cmd{F8} (удалить). Все операции
+выполняются с подтверждением и показывают прогресс.
+
+Полезные сочетания:
+\begin{itemize}
+  \item \cmd{F7} --- создать каталог;
+  \item \cmd{F8} --- удалить;
+  \item \cmd{F6} --- переместить или переименовать;
+  \item \cmd{F5} --- копировать;
+  \item \cmd{Ctrl+r} --- сравнить две директории (включая
+    содержимое).
+\end{itemize}
+
+\section{Поиск и сортировка}
+
+\cmd{Alt+s} --- свойства, \cmd{Ctrl+s} / \cmd{Alt+s} ---
+поиск по имени; \cmd{Alt+s} --- переключить сортировку
+(по имени, дате, размеру). \cmd{Ctrl+h} --- показать/
+скрыть скрытые файлы (начинающиеся с \cmd{.}).
+
+\section{Когда mc, а когда shell-команды}
+
+\begin{center}
+\begin{tabular}{lp{0.55\linewidth}}
+\toprule
+\textbf{Задача} & \textbf{Удобнее} \\
+\midrule
+одиночный файл & \cmd{cp} / \cmd{mv} \\
+копировать дерево & \cmd{cp -r} \\
+просмотр дерева & \cmd{mc} / \cmd{tree} \\
+фильтр по имени & \cmd{find} + \cmd{grep} \\
+сравнить две директории & \cmd{mc} (Ctrl+r) \\
+пакетная обработка & shell-скрипт \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\cmd{mc} не заменяет shell-команды --- это другой интерфейс
+к тем же операциям. Для повторяющихся задач скрипт на
+оболочке (\nameref{ch:27-scripting-ide}) масштабируете,
+а \cmd{mc} --- для разовых манипуляций.
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Не видите скрытые файлы --- включите
+    \cmd{Ctrl+h} (или настройку «Show hidden files»).
+  \item Переместили файл не туда --- посмотрите, какая
+    панель была \emph{активной} (обведённая рамкой);
+    операция выполняется из активной в неактивную.
+  \item Не выходите из \cmd{mc}, нажав \cmd{q} ---
+    используйте \cmd{F10} или \cmd{Ctrl+q}.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+\cmd{mc} удобен для навигации по структуре, созданной
+пакетами (\nameref{ch:08-packages}) или Docker
+(\nameref{ch:21-docker-data}): в контейнере, где нет
+\cmd{tree}, \cmd{mc} часто единственный графический
+по терминалу интерфейс для файлов.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Как переключаться между левой и правой панелью?
+  \item Как создать в активной панели каталог
+    и перейти в него?
+  \item Как скопировать несколько выделенных файлов
+    в другую директорию?
+  \item Как сравнить две директории на различия?
+  \item Чем работа в \cmd{mc} отличается от \cmd{find}
+    + \cmd{grep} по гибкости?
+\end{enumerate}

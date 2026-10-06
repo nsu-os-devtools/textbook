@@ -1,0 +1,127 @@
+% Глава: 16-virtual-memory
+% Статус: наполнено (первый прогон).
+\chapter{Виртуальная память}
+\label{ch:16-virtual-memory}
+
+\section{Зачем нужна виртуальная память}
+
+Каждому процессу хотелось бы видеть «свою» память, начиная
+с адреса 0, и не сталкиваться с другими процессами.
+\textbf{Виртуальная память} --- это механизм ОС, который
+даёт каждому процессу \emph{отдельное адресное пространство},
+а ядро переводит виртуальные адреса в физические.
+
+Это же самое происходит на вашей ВМ: каждый процесс,
+запущенный на \fpath{pglab.nsu.ru}, живёт в собственной
+виртуальной памяти.
+
+Выгоды:
+\begin{itemize}
+  \item \textbf{Изоляция} --- сбой в одном процессе не
+    «ломает» соседний;
+  \item \textbf{Больше памяти, чем в RAM} --- неиспользуемые
+    страницы выгружаются на диск (\emph{swap});
+  \item \textbf{Общий код} --- один и тот же текст библиотеки
+    может жить в RAM один раз и «видеться» многим процессам.
+\end{itemize}
+
+\section{Строение адресного пространства процесса}
+
+У процесса есть несколько областей:
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=0.6cm]
+    \node[box, minimum width=7cm, minimum height=1cm] (stack) {stack (растёт вниз)};
+    \node[box, minimum width=7cm, minimum height=1cm, below=of stack] (heap) {heap (malloc, растёт вверх)};
+    \node[box, minimum width=7cm, minimum height=1.6cm, below=of heap] (data) {data / bss\\ (глобальные переменные)};
+    \node[box, minimum width=7cm, minimum height=1cm, below=of data] (text) {text (код программы)};
+  \end{tikzpicture}
+  \caption{Основные области адресного пространства процесса.}
+  \label{fig:mem-layout}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{stack} --- локальные переменные и адреса
+    возврата; управляется автоматически, ограничен
+    (обычно несколько мегабайт);
+  \item \textbf{heap} --- память, запрашиваемая через
+    \cmd{malloc}/\cmd{new}; управляется программой;
+  \item \textbf{data/bss} --- глобальные и статические
+    переменные;
+  \item \textbf{text} --- код программы (только чтение).
+\end{itemize}
+
+\section{Страницы и таблица страниц}
+
+Память разбита на \textbf{страницы} (обычно 4 КБ).
+Ядро хранит для процесса \textbf{таблицу страниц}:
+соответствие «виртуальная страница $\to$ физическая
+страница (или файл на диске)». При обращении к адресу
+аппарат (\emph{MMU}/TLB) через таблицу переводит адрес;
+если страницы нет в RAM --- происходит \textbf{page fault},
+ядро подгружает её.
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.4cm]
+    \node[process] (cpu) {CPU\\[0.2em] виртуальный адрес};
+    \node[process, below=of cpu] (mmu) {MMU / TLB\\[0.2em] перевод адреса};
+    \node[process, below=of mmu] (pt) {таблица страниц};
+    \node[storage, below left=1.3cm and -0.6cm of pt] (ram) {RAM};
+    \node[storage, below right=1.3cm and -0.6cm of pt] (disk) {диск (swap)};
+    \draw[flow, <->] (cpu) -- (mmu);
+    \draw[flow, <->] (mmu) -- (pt);
+    \draw[flow, <->] (pt) -- (ram);
+    \draw[flow, <->] (pt) -- (disk);
+  \end{tikzpicture}
+  \caption{Перевод виртуальных адресов в физические.}
+  \label{fig:vm}
+\end{figure}
+
+\section{\cmd{mmap} и общая память}
+
+Функция \cmd{mmap} позволяет «пришить» файл или
+анонимную область к адресному пространству процесса.
+Через неё реализованы и загрузка библиотек, и
+\textbf{общая память} между процессами (см.\
+\nameref{ch:18-ipc}): два процесса могут видеть одну
+и ту же физическую страницу.
+
+\section{Связь с процессами и Docker}
+
+Каждый процесс (\nameref{ch:12-processes}) имеет своё
+адресное пространство; когда процесс вызывается из
+оболочки, у него отдельный стек и куча. Контейнеры
+Docker (\nameref{ch:19-docker-basics}) разделяют
+\emph{имена} и ресурсы, но виртуальная память процессов
+внутри контейнера работает по тем же правилам;
+ограничения по RAM на контейнер --- через cgroups
+(\nameref{ch:23-docker-resources}).
+
+\section{Типичные проблемы, связанные с памятью}
+
+\begin{itemize}
+  \item \textbf{Утечка} --- \cmd{malloc} без \cmd{free};
+    память накапливается, процесс «раздувается»;
+  \item \textbf{Переполнение стека} --- глубокая
+    рекурсия или огромный локальный массив;
+  \item \textbf{Use-after-free} --- обращение к памяти
+    после \cmd{free};
+  \item \textbf{Дangling pointer} --- указатель на
+    объект, который уже уничтожен.
+\end{itemize}
+
+Всё это ищут инструментами из \nameref{ch:17-debugging}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Зачем нужна виртуальная память? Назовите
+    три выгоды.
+  \item Перечислите основные области адресного
+    пространства и что в них хранится.
+  \item Что такое страница и таблица страниц?
+  \item Что происходит при page fault?
+  \item Чем heap отличается от stack по управлению
+    и размеру?
+\end{enumerate}

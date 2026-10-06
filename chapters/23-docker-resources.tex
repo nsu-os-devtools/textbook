@@ -1,0 +1,96 @@
+% Глава: 23-docker-resources
+% Статус: наполнено (первый прогон).
+\chapter{Ресурсы контейнеров}
+\label{ch:23-docker-resources}
+
+\section{Изоляция ресурсов: cgroups}
+
+Контейнеры делят ядро хоста; чтобы один «не съел»
+всё, Linux использует \textbf{cgroups} (control
+groups) --- механизм ядра, ограничивающий ресурсы
+(память, CPU, IO) для группы процессов. Docker
+управляет cgroups за вас через флаги.
+
+Лимиты задают долю ресурсов вашей ВМ на \fpath{pglab.nsu.ru},
+чтобы один контейнер не забрал всё у соседних.
+
+\section{Лимиты CPU}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run --cpus 1.5 myimage          # ограничить 1.5 ядрами
+docker run --cpuset-cpus 0,1 myimage   # закрепить за конкретными CPU
+\end{minted}
+
+\cmd{--cpus} задаёт долю (дробное число допустимо),
+\cmd{--cpuset-cpus} --- список конкретных ядер.
+
+\section{Лимиты памяти}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run --memory 512m myimage          # максимум 512 МиБ
+docker run --memory 512m --memory-swap 1g myimage  # + подкачка (swap)
+\end{minted}
+
+Если процесс превысит лимит памяти, ядро сработает
+\textbf{OOM-killer} и завершит процесс с ошибкой
+(\cmd{Killed}). Проверьте логи:
+\cmd{docker inspect} покажет \cmd{OOMKilled: true}.
+
+\section{Мониторинг}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+docker stats             # живая статистика CPU и памяти по контейнерам
+docker stats --no-stream # однократно
+docker top <id>          # процессы внутри контейнера
+docker inspect <id>      # полная конфигурация и лимиты
+\end{minted}
+
+\section{Типовая схема ограничений}
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.3cm]
+    \node[layer, minimum width=7cm, minimum height=2.8cm] (host) {};
+    \node[font=\small] at (host) {хост: CPU + RAM};
+    \node[process, minimum width=1.6cm] (c1) at ([yshift=-0.4cm]host.west) [xshift=0.9cm] {app 1};
+    \node[process, right=0.3cm of c1, minimum width=1.6cm] (c2) {app 2};
+    \node[font=\tiny, below=1pt of c1] {cpus=1.0, mem=512m};
+    \node[font=\tiny, below=1pt of c2] {cpus=0.5, mem=256m};
+  \end{tikzpicture}
+  \caption{Каждый контейнер имеет лимиты CPU и памяти (cgroups).}
+  \label{fig:cgroups}
+\end{figure}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Контейнер убивается «без причины» --- смотрите
+    \cmd{OOMKilled}; увеличьте \cmd{--memory} или
+    оптимизируйте память приложения;
+  \item Лимит CPU слишком низкий --- приложение
+    «замедляется»; измерьте \cmd{docker stats};
+  \item Не заданы лимиты --- один контейнер может
+    занять всю память хоста;
+  \item \cmd{--memory-swap} без \cmd{--memory} ---
+    некорректная конфигурация.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Лимиты настраиваются и в \cmd{docker-compose}
+(\nameref{ch:22-docker-compose}); мониторинг процессов
+--- \nameref{ch:12-processes}; распределение памяти ---
+\nameref{ch:16-virtual-memory}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Что такое cgroups и зачем они нужны
+    контейнерам?
+  \item Как ограничить контейнер 1 CPU и 512 МБ
+    памяти?
+  \item Как узнать, был ли контейнер убит
+    OOM-killer'ом?
+  \item Чем \cmd{--cpus} отличается от
+    \cmd{--cpuset-cpus}?
+  \item Как посмотреть использование ресурсов
+    контейнеров в реальном времени?
+\end{enumerate}

@@ -1,0 +1,125 @@
+% Глава: 19-docker-basics
+% Статус: наполнено (первый прогон).
+\chapter{Docker: основы}
+\label{ch:19-docker-basics}
+
+\section{Контейнер и виртуальная машина}
+
+\textbf{Виртуальная машина} виртуализует
+\emph{оборудование}: внутри гостевая ОС с ядром,
+драйверами, собственным пространством.
+\textbf{Контейнер} изолирует \emph{процессы}: все
+контейнеры на хосте делят одно ядро Linux, но имеют
+отдельные файловые системы, сетевые
+пространства и PID-пространства.
+
+На курсе Docker-демон (хост) --- это ваша ВМ на сервере
+\fpath{pglab.nsu.ru}: контейнеры изолируются внутри вашей системы,
+разделяя её ядро и диск.
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=0.6cm]
+    \node[layer, minimum width=6cm, minimum height=2.6cm] (vmhost) {};
+    \node[font=\small, above=2pt of vmhost] {Виртуальные машины};
+    \node[process, minimum width=2.4cm] (vm1) at (vmhost) {}; 
+    \node[font=\small] at (vm1) {ВМ: гостевая ОС + ядро};
+    \node[layer, below=1.6cm of vmhost, minimum width=6cm, minimum height=2.6cm] (cghost) {};
+    \node[font=\small, above=2pt of cghost] {Контейнеры};
+    \node[ext, minimum width=1.5cm] (c1) at ([yshift=-0.5cm]cghost.west) [xshift=0.7cm] {app};
+    \node[ext, right=0.3cm of c1, minimum width=1.5cm] (c2) {app};
+    \node[ext, right=0.3cm of c2, minimum width=1.5cm] (c3) {app};
+    \node[font=\small, below=3pt of c2] {общее ядро хоста};
+  \end{tikzpicture}
+  \caption{ВМ изолирует целую ОС, контейнеры --- процессы поверх общего ядра.}
+  \label{fig:vm-vs-ct}
+\end{figure}
+
+Преимущества контейнеров: быстрый запуск (секунды),
+малый размер (сотни МБ), переносимость «от
+разработчика до продакшена».
+
+\section{Архитектура Docker}
+
+\begin{itemize}
+  \item \textbf{Docker Engine} (демон \cmd{dockerd}) ---
+    управляющий процесс на хосте;
+  \item \textbf{клиент} (\cmd{docker}) --- команда,
+    которой вы пользуетесь; общается с демоном по
+    API;
+  \item \textbf{образ} (image) --- неизменяемый набор
+    файлов + метаданные; \textbf{контейнер} ---
+    работающий экземпляр образа.
+\end{itemize}
+
+\section{Ключевые команды}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run hello-world        # скачать и запустить тестовый образ
+docker run -it ubuntu bash    # запустить интерактивный контейнер
+docker ps                     # работающие контейнеры
+docker ps -a                  # все контейнеры, включая остановленные
+docker images                 # локальные образы
+docker exec -it <id> bash     # выполнить команду в работающем контейнере
+docker logs <id>              # stdout/stderr контейнера
+docker stop <id>              # остановить контейнер
+docker start <id>             # запустить остановленный контейнер
+docker rm <id>                # удалить остановленный контейнер
+docker rmi <image>            # удалить образ
+\end{minted}
+
+\cmd{docker run} с флагами:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run -d -p 8080:80 --name web nginx   # в фоне, маппинг портов
+docker run --rm -it alpine sh               # удалить при выходе
+docker run --name app myimage:1.0           # по имени и тегу образа
+\end{minted}
+
+\section{Образы и реестры}
+
+\textbf{Реестр} (registry) --- хранилище образов;
+основной публичный --- Docker Hub.
+\textbf{Тег} (tag) --- метка версии в имени образа:
+\cmd{nginx:1.25}, \cmd{nginx:latest}.
+\begin{minted}[bgcolor=gray!6]{bash}
+docker pull nginx:1.25           # скачать конкретную версию
+docker tag myimage:1.0 me/myimage:1.0   # переименовать для push
+docker push me/myimage:1.0       # загрузить, после login
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \emph{permission denied} на \fpath{/var/run/docker.sock}
+    --- пользователь не в группе \cmd{docker}; добавьте
+    (\cmd{sudo usermod -aG docker \$USER}), перезайдите.
+  \item Контейнер сразу завершился --- проверьте
+    \cmd{docker logs}; часто причина --- отсутствующий
+    \cmd{CMD} в Dockerfile.
+  \item Порт «не отвечает» --- не задан \cmd{-p host:container}.
+  \item Изменения в контейнере потерялись после
+    перезапуска --- данные хранятся в слое контейнера;
+    для сохранения нужны volumes (\nameref{ch:21-docker-data}).
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Создание образа --- Dockerfile
+(\nameref{ch:20-dockerfile}); хранение данных ---
+\nameref{ch:21-docker-data}; несколько контейнеров ---
+\nameref{ch:22-docker-compose}; ограничения ресурсов ---
+\nameref{ch:23-docker-resources}. Внутрь контейнера
+можно войти \cmd{docker exec} и поработать
+в tmux (\nameref{ch:10-tmux}) или Vim
+(\nameref{ch:09-vim}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Чем контейнер отличается от виртуальной
+    машины?
+  \item Что такое образ и что такое контейнер?
+  \item Как запустить интерактивный контейнер с
+    bash и как из него выйти?
+  \item Как посмотреть логи завершившегося
+    контейнера?
+  \item Зачем нужны теги образов?
+\end{enumerate}

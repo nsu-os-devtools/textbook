@@ -1,0 +1,165 @@
+% Глава: 07-text-pipelines
+% Статус: наполнено (первый прогон).
+\chapter{Стандартные потоки, перенаправление, конвейеры}
+\label{ch:07-text-pipelines}
+
+\section{Стандартные потоки}
+
+Каждый запускаемый процесс по умолчанию получает три
+\textbf{стандартных потока}:
+
+\begin{center}
+\begin{tabular}{clp{0.4\linewidth}}
+\toprule
+\textbf{FD} & \textbf{Поток} & \textbf{Назначение} \\
+\midrule
+0 & stdin  & вход: то, что программа читает \\
+1 & stdout & выход: результат работы программы \\
+2 & stderr & ошибки и диагностика \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+По умолчанию все три подключены к терминалу. Ключевой принцип
+Unix: программы пишут результат в \cmd{stdout}, а сообщения
+об ошибках --- в \cmd{stderr}. Разделение позволяет
+независимо перенаправлять данные и диагностику.
+
+\section{Перенаправление вывода}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+ls > out.txt        # stdout в файл: создаёт или очищает
+ls >> out.txt       # stdout добавляется в файл
+ls 2> err.txt       # stderr в файл
+ls &> all.txt       # stdout и stderr в один файл (bash)
+ls 2>&1 > out.txt   # stderr туда, где сейчас stdout, потом stdout в файл
+ls > out.txt 2> err.txt    # явно разделить
+tee out.txt < big.txt       # показать на экране и в файле
+\end{minted}
+
+Запомнить два оператора: \cmd{>} --- заменить/создать файл,
+\cmd{>>} --- дописать.
+
+\begin{warnbox}
+\cmd{>} \textbf{обрезает} файл до нуля перед записью. Если
+файл уже содержал важные данные и вы хотели дописать,
+используйте \cmd{>>}.
+\end{warnbox}
+
+\section{Конвейеры (pipes)}
+
+Оператор \cmd{|} передаёт \cmd{stdout} одной команды в
+\cmd{stdin} другой. Это основной способ строить сложные
+преобразования из простых:
+\begin{minted}[bgcolor=gray!6]{bash}
+cat access.log | grep "GET" | wc -l
+df -h | grep " /$"
+ps aux | sort -k3 -nr | head
+\end{minted}
+
+Правило: каждое звено конвейера делает \textbf{одну} операцию.
+Если решение требует трёх отдельных команд с временными
+файлами --- скорее всего, его можно выразить конвейером.
+
+\section{Текстовые утилиты}
+
+\begin{center}
+\begin{tabular}{lp{0.6\linewidth}}
+\toprule
+\textbf{Утилита} & \textbf{Назначение} \\
+\midrule
+\cmd{cat}   & вывести файл(ы) в stdout; склеить файлы \\
+\cmd{head}  & первые строки/байты (\flag{n} 5 --- 5 строк) \\
+\cmd{tail}  & последние строки; \flag{f} --- следить за обновлением \\
+\cmd{wc}    & подсчитать строки/слова/байты (\flag{l}, \flag{w}, \flag{c}) \\
+\cmd{sort}  & отсортировать строки (\flag{r} --- обратно, \flag{n} --- число, \flag{k} --- ключ) \\
+\cmd{uniq}  & убрать подряд идущие дубли (работает после sort) \\
+\cmd{cut}   & вырезать поле по разделителю (\flag{-d} '\textbackslash|' \flag{-f} 2) \\
+\cmd{grep}  & поиск по регулярному выражению \\
+\cmd{tr}    & побайтовая замена/удаление символов \\
+\cmd{less}  & постраничный просмотр больших файлов \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\cmd{grep} --- самая частая. Основные флаги:
+\begin{minted}[bgcolor=gray!6]{bash}
+grep ERROR log.txt         # строки, содержащие ERROR
+grep -i error log.txt      # без учёта регистра
+grep -c ERROR log.txt      # сколько таких строк
+grep -E "err|warn" log.txt # расширенные регулярные выражения
+grep -v DEBUG log.txt      # строки, НЕ содержащие DEBUG
+grep -n "user" config      # с номерами строк
+\end{minted}
+
+\section{Типовой сценарий анализа}
+
+\begin{sloppypar}
+На практике такой лог-файл обычно лежит на вашей ВМ на сервере
+\fpath{pglab.nsu.ru}. Допустим, в \fpath{events.log} строки вида
+\cmd{timestamp|level|source|file|status}.
+\end{sloppypar}
+Частые вопросы:
+\begin{minted}[bgcolor=gray!6]{bash}
+wc -l < events.log                       # общее число строк
+grep -c ERROR events.log                 # число ошибок
+cut -d'|' -f2 events.log | sort | uniq -c # количество каждого уровня
+cut -d'|' -f3 events.log | sort | uniq -c | sort -nr # по источникам
+grep ERROR events.log > errors.log        # выписать ошибки
+\end{minted}
+
+Ключевой приём: \cmd{sort} перед \cmd{uniq} ---
+\cmd{uniq} убирает только \emph{соседние} дубли, поэтому
+сначала строки должны быть отсортированы.
+
+\section{Постраничный просмотр: \cmd{less}}
+
+Для больших файлов \cmd{cat} неудобен: вывод проматывает
+терминал. \cmd{less} --- стандартный pager:
+\begin{minted}[bgcolor=gray!6]{bash}
+less big.log
+# внутри less:
+# /pattern  n  N  - поиск вперёд/назад
+# g  G            - начало / конец
+# Space / b       - страница вперёд / назад
+# q               - выход
+\end{minted}
+
+\cmd{less} и \cmd{more} похожи, но \cmd{less} позволяет
+прокручивать назад и искать.
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Конвейер «ничего не возвращает», хотя отдельные
+    команды работают --- проверьте, не фильтрует ли
+    \cmd{grep} всё (нет совпадений);
+  \item \cmd{uniq} не убирает все дубли --- не отсортированы
+    строки перед \cmd{uniq};
+  \item \cmd{>} случайно перезаписал важный файл;
+  \item Забыли \cmd{2>} и диагностика ушла в терминал,
+    а не в файл;
+  \item \cmd{tail} без \flag{f} показывает конец один раз
+    и завершается; для наблюдения нужен \flag{f}.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Конвейеры --- это основа автоматизации: из них собираются
+скрипты оболочки (\nameref{ch:27-scripting-ide}),
+обрабатываются логи приложений, выводятся результаты
+тестов (\nameref{ch:15-testing-optimization}), логируются
+запуски контейнеров (\nameref{ch:19-docker-basics}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Объясните разницу между \cmd{>} и \cmd{>>}. Что
+    произойдёт, если вы случайно использовали первое?
+  \item Что такое \cmd{stderr} и зачем его разделять от
+    \cmd{stdout}?
+  \item Напишите конвейер, который считает количество
+    строк в файле, содержащих слово \fpath{error}
+    (без учёта регистра).
+  \item Почему \cmd{sort} обычно ставят перед \cmd{uniq}?
+  \item Как посмотреть последние 20 строк журнала и
+    продолжать наблюдать за новыми?
+\end{enumerate}

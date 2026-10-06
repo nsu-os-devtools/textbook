@@ -1,0 +1,151 @@
+% Глава: 08-packages
+% Статус: наполнено (первый прогон).
+\chapter{Пакетная система: dpkg и apt}
+\label{ch:08-packages}
+
+\section{Зачем нужна пакетная система}
+
+Устанавливать программы «вручную» (скачать архив, распаковать,
+поставить зависимости) неудобно и ненадёжно.
+\textbf{Пакетная система} хранит программы в стандартизированном
+виде и отслеживает: что установлено, какие файлы к чему
+относятся, какие зависимости есть. В Debian/Ubuntu
+основной формат --- \textbf{\fpath{.deb}}.
+
+Устанавливаем пакеты в свою ВМ на сервере \fpath{pglab.nsu.ru}:
+образ Ubuntu идёт «голый», и каждый добирает нужное сам.
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.4cm]
+    \node[process] (repo) {Депозитарий\\[0.2em] (apt)};
+    \node[data, below=of repo] (cache) {Кэш пакетов\\[0.2em] /var/cache/apt};
+    \node[process, below=of cache] (dpkg) {dpkg\\[0.2em] (распаковка .deb)};
+    \node[storage, below=of dpkg] (fs) {Файлы системы\\[0.2em] /usr, /etc};
+    \draw[flow, <->] (repo) -- node[right]{установка} (cache);
+    \draw[flow, <->] (cache) -- (dpkg);
+    \draw[flow, <->] (dpkg) -- (fs);
+  \end{tikzpicture}
+  \caption{Связь между apt (репозиторий) и dpkg (развёртка).}
+  \label{fig:pkg}
+\end{figure}
+
+\section{dpkg и apt: чем отличаются}
+
+\begin{center}
+\begin{tabular}{lp{0.4\linewidth}lp{0.4\linewidth}}
+\toprule
+\textbf{dpkg} & работает с конкретным файлом \fpath{.deb} и файлами
+системы; зависимости сам не разрешает \\
+\textbf{apt} & управляет набором пакетов с учётом зависимостей и репозиториев \\
+\midrule
+\multicolumn{2}{l}{На практике: \cmd{apt} --- интерфейс для пользователя,} \\
+\multicolumn{2}{l}{\cmd{dpkg} --- низкоуровневый исполнитель.} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Обычно работают через \cmd{apt} (или \cmd{apt-get}); \cmd{dpkg}
+используют для точечных задач (установка локального \fpath{.deb},
+просмотр файлов пакета).
+
+\section{Основные операции}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+sudo apt update              # обновить список доступных пакетов
+sudo apt upgrade             # обновить установленные пакеты
+sudo apt install <pkg>       # установить пакет
+sudo apt remove <pkg>        # удалить, файлы конфигурации остаются
+sudo apt purge <pkg>         # удалить вместе с конфигурацией
+sudo apt autoremove          # удалить ненужные зависимости
+apt search <term>            # поиск по каталогу
+apt show <pkg>               # сведения о пакете
+apt list --installed         # список установленных пакетов
+\end{minted}
+
+\textbf{update} и \textbf{upgrade} --- разные вещи:
+\cmd{update} перечитывает списки доступных версий из
+репозиториев; \cmd{upgrade} ставит новые версии уже
+установленного.
+
+\section{Работа с локальными \fpath{.deb}}
+
+Если вам дали файл \fpath{package.deb} --- его можно установить
+двумя способами:
+\begin{minted}[bgcolor=gray!6]{bash}
+sudo dpkg -i package.deb          # напрямую
+sudo apt install ./package.deb    # apt разрешает зависимости
+\end{minted}
+
+Первый способ быстрее, но если у пакета есть
+зависимости, которых нет в системе, \cmd{dpkg}
+остановится. Тогда \cmd{apt install ./package.deb}
+доустановит всё из репозиториев.
+
+\section{Инспекция пакетов без установки}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+dpkg-deb --info package.deb      # имя, версия, описание
+dpkg-deb --contents package.deb  # список файлов внутри
+dpkg-deb --show --showformat='...\\n' package.deb  # свои поля
+\end{minted}
+
+После установки:
+\begin{minted}[bgcolor=gray!6]{bash}
+dpkg -l                          # все пакеты и их состояние
+dpkg -L <pkg>                    # файлы, установленные пакетом
+dpkg -S <path>                   # какой пакет установил файл
+dpkg -s <pkg>                    # подробная информация
+dpkg -C                          # проверка состояния, поиск ошибок
+\end{minted}
+
+\section{Стандартные каталоги}
+
+Пакеты в Debian/Ubuntu обычно ставят:
+\begin{itemize}
+  \item исполняемые файлы --- в \fpath{/usr/bin} и \fpath{/usr/sbin};
+  \item библиотеки --- в \fpath{/usr/lib};
+  \item документацию --- в \fpath{/usr/share/doc/<pkg>};
+  \item конфигурацию --- в \fpath{/etc/<pkg>};
+  \item метаданные --- в \fpath{/var/lib/dpkg/info}.
+\end{itemize}
+
+\cmd{dpkg -L} показывает реальный список для конкретного
+пакета --- не полагайтесь на память.
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \emph{Unable to locate package} --- сначала
+    \cmd{sudo apt update};
+  \item Пакет установлен, но команда не находится ---
+    посмотрите \cmd{dpkg -L}, какой бинарник поставил пакет;
+  \item После удаления пакета остались файлы конфигурации ---
+    это нормально; уберите \cmd{sudo apt purge <pkg>};
+  \item Зависимости не разрешаются --- не используйте
+    \cmd{dpkg -i} для пакетов с зависимостями;
+  \item \cmd{apt} ругается на «held» пакеты --- посмотрите
+    \cmd{apt-mark showhold}.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Пакетная система нужна и для установки
+\cmd{gcc}, \cmd{make}, \cmd{valgrind}
+(\nameref{ch:13-c-compilation}, \nameref{ch:17-debugging}),
+и для \cmd{git} (\nameref{ch:25-git}), и для \cmd{docker}
+(\nameref{ch:19-docker-basics}). В Docker-образе пакетная
+система --- тоже \cmd{apt} (если образ на Debian/Ubuntu),
+см.\ \nameref{ch:20-dockerfile}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Объясните разницу между \cmd{apt update} и
+    \cmd{apt upgrade}. Что делает каждое?
+  \item Чем \cmd{dpkg} отличается от \cmd{apt} в
+    разрешении зависимостей?
+  \item Как узнать, какие файлы принадлежат
+    установленному пакету?
+  \item Чем \cmd{remove} отличается от \cmd{purge}?
+  \item Как установить локальный \fpath{.deb} так,
+    чтобы зависимости разрешались автоматически?
+\end{enumerate}

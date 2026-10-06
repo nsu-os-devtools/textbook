@@ -1,0 +1,144 @@
+% Глава: 20-dockerfile
+% Статус: наполнено (первый прогон).
+\chapter{Dockerfile}
+\label{ch:20-dockerfile}
+
+\section{Что такое Dockerfile}
+
+\textbf{Dockerfile} --- текст с инструкциями, как
+построить образ. Команда \cmd{docker build} выполняет
+инструкции по порядку, каждая --- отдельный
+\textbf{слой}.
+
+Собираем образы на своей ВМ: \cmd{docker build} запускается на
+\fpath{pglab.nsu.ru} и кэширует слои на её диске.
+
+\begin{minted}[bgcolor=gray!6]{Dockerfile}
+# базовый образ
+FROM ubuntu:22.04
+
+# метаданные
+LABEL maintainer="dev@example.org"
+
+# рабочий каталог внутри контейнера
+WORKDIR /app
+
+# установить инструменты; каждый RUN создаёт отдельный слой
+RUN apt-get update && apt-get install -y --no-install-recommends gcc make
+RUN rm -rf /var/lib/apt/lists/*
+
+# скопировать файлы проекта
+COPY src/ ./src/
+
+# собрать программу
+RUN make
+
+# точка входа
+CMD ["./app"]
+\end{minted}
+
+\section{Основные инструкции}
+
+\begin{center}
+\begin{tabular}{lp{0.62\linewidth}}
+\toprule
+\textbf{Инструкция} & \textbf{Назначение} \\
+\midrule
+\cmd{FROM}     & базовый образ; начинается с него сборка \\
+\cmd{WORKDIR}  & каталог по умолчанию внутри контейнера \\
+\cmd{RUN}      & выполнить команду при сборке (создаёт слой) \\
+\cmd{COPY}     & скопировать файлы из контекста сборки \\
+\cmd{ADD}      & как COPY + распаковка архивов и загрузка по URL \\
+\cmd{ENV}      & задать переменную окружения в образе \\
+\cmd{ARG}      & параметр, передаваемый при \cmd{docker build} \\
+\cmd{LABEL}    & метаданные образа \\
+\cmd{EXPOSE}   & документация о портах (не пробрасывает!) \\
+\cmd{ENTRYPOINT} & фиксированная команда контейнера \\
+\cmd{CMD}      & аргументы по умолчанию для ENTRYPOINT \\
+\cmd{USER}     & пользователь, от которого работает контейнер \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{CMD} vs \textbf{ENTRYPOINT}: \cmd{CMD} легко
+переопределить аргументами запуска; \cmd{ENTRYPOINT} ---
+``главная'' команда, аргументы передаются ей.
+
+\section{Слои и кэш}
+
+Каждая инструкция создаёт слой. Docker кэширует
+слои: если строки выше не менялись, их слои берутся
+из кэша, и сборка идёт быстро. Поэтому
+\textbf{порядок инструкций важен}:
+\begin{itemize}
+  \item сначала то, что редко меняется (зависимости);
+  \item потом то, что часто (исходный код);
+  \item так при изменении кода пересобирается только
+    верхний слой.
+\end{itemize}
+
+\section{\cmd{COPY} и \cmd{ADD}}
+
+\cmd{COPY} --- скопировать файл из каталога сборки.
+\cmd{ADD} делает то же, но дополнительно распаковывает
+архивы и может загрузить файл по URL. Для обычного
+копаирования файлов проекта используйте \cmd{COPY}.
+
+\section{Многоступенчатая сборка (multi-stage)}
+
+Один Dockerfile может содержать несколько
+\cmd{FROM}:
+\begin{minted}[bgcolor=gray!6]{Dockerfile}
+FROM golang:1.21 AS build
+WORKDIR /src
+COPY . .
+RUN go build -o app .
+
+FROM alpine:3.18
+COPY --from=build /src/app /app
+ENTRYPOINT ["/app"]
+\end{minted}
+
+Первый слой --- «сборочный» (с компилятором), второй ---
+лёгкий, только с готовым бинарником. Размер
+конечного образа резко меньше.
+
+\section{\cmd{.dockerignore}}
+
+Файл \fpath{.dockerignore} рядом с Dockerfile
+определяет, что \emph{не} копировать в контекст
+сборки (.git, локальные логи, артефакты).
+Уменьшает размер и время сборки.
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \cmd{RUN apt-get update} и \cmd{apt-get install}
+    в разных \cmd{RUN} --- кэш не поможет; объедините
+    в одну инструкцию;
+  \item Забыли \cmd{WORKDIR} --- файлы копировались в
+    \fpath{/} вместо нужного каталога;
+  \item Образ «огромный» --- кэш пакетного менеджера не
+    чистится после установки (см.\ пример с \cmd{rm -rf}
+    выше), либо не используется multi-stage;
+  \item \cmd{EXPOSE} «не работает» --- он не пробрасует
+    порт; нужен \cmd{-p} при \cmd{docker run}.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Dockerfile --- описание образа; хранение данных ---
+\nameref{ch:21-docker-data}; несколько контейнеров ---
+\nameref{ch:22-docker-compose}; сборка C-проекта внутри
+образа --- \nameref{ch:13-c-compilation} и
+\nameref{ch:14-make}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Чем \cmd{COPY} отличается от \cmd{ADD}?
+  \item Что такое слой и почему порядок инструкций
+    важен?
+  \item Чем \cmd{CMD} отличается от \cmd{ENTRYPOINT}?
+  \item Как сделать образ «меньше», используя
+    multi-stage?
+  \item Зачем нужен \cmd{.dockerignore}?
+\end{enumerate}

@@ -1,0 +1,134 @@
+% Глава: 10-tmux
+% Статус: наполнено (первый прогон).
+\chapter{Управление сессиями: tmux}
+\label{ch:10-tmux}
+
+\section{Зачем нужен tmux}
+
+При работе по SSH (\nameref{ch:02-linux-access}) разрыв
+соединения убивает все запущенные в терминале процессы.
+\textbf{tmux} --- менеджер терминальных сессий: он позволяет
+запустить программу в \emph{сессии}, отключиться, вернуться
+позже (с другого компьютера) и продолжить работу --- процессы
+останутся.
+
+Для работы на сервере \fpath{pglab.nsu.ru} это особенно важно:
+длинная компиляция или тесты не прервутся, даже если вы
+случайно закрыли SSH-сессию.
+
+Основные понятия:
+\begin{center}
+\begin{tabular}{lp{0.7\linewidth}}
+\toprule
+\textbf{Понятие} & \textbf{Что это} \\
+\midrule
+session & именованное пространство (несколько окон) \\
+window  & «вкладка» внутри сессии \\
+pane    & область внутри окна (деление экрана) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.2cm]
+    \node[process, minimum width=6cm] (s) {session: \texttt{work}};
+    \node[ext, below left=1.1cm and -0.5cm of s] (w1) {window: monitor};
+    \node[ext, below right=1.1cm and -0.5cm of s] (w2) {window: editor};
+    \node[data, below left=1.1cm and -0.3cm of w1] (p1) {pane: generator};
+    \node[data, below right=1.1cm and -0.3cm of w1] (p2) {pane: tail -f};
+    \node[data, below=1.1cm of w2] (p3) {pane: vim};
+    \draw[flow] (s) -- (w1);
+    \draw[flow] (s) -- (w2);
+    \draw[flow] (w1) -- (p1);
+    \draw[flow] (w1) -- (p2);
+    \draw[flow] (w2) -- (p3);
+  \end{tikzpicture}
+  \caption{Иерархия tmux: сессия содержит окна, окно --- панели.}
+  \label{fig:tmux}
+\end{figure}
+
+\section{Основное управление}
+
+Большинство команд начинаются с \textbf{prefix} (по умолчанию
+\cmd{Ctrl+b}), затем нажимается клавиша-команда. Ниже ---
+без prefix там, где он не нужен.
+
+\begin{minted}[bgcolor=gray!6]{bash}
+tmux                      # новая сессия по умолчанию
+tmux new -s work          # именованная сессия
+tmux ls                   # список сессий
+tmux attach -t work       # присоединиться к сессии
+tmux kill-session -t work # удалить сессию
+\end{minted}
+
+Отключение от сессии (процессы продолжают работать):
+нажмите \cmd{Ctrl+b}, отпустите, затем \cmd{d} (detach).
+
+\section{Окна и панели (после prefix \cmd{Ctrl+b})}
+
+\begin{center}
+\begin{tabular}{lp{0.7\linewidth}}
+\toprule
+\textbf{Клавиша} & \textbf{Действие} \\
+\midrule
+\cmd{c}         & создать новое окно \\
+\cmd{n} / \cmd{p} & следующее / предыдущее окно \\
+\cmd{0}--\cmd{9} & перейти к окну по номеру \\
+\cmd{\%}        & разделить окно вертикально \\
+\cmd{\textbackslash} & разделить окно горизонтально \\
+\cmd{h/j/k/l}  & переключение между панелями \\
+\cmd{z}         & zoom: на весь экран / обратно \\
+\cmd{x}         & закрыть текущую панель \\
+\cmd{d}         & отключиться от сессии (detach) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Типовая рабочая раскладка: в одной панели запущена долгая
+программа, в другой --- наблюдение за логом (\cmd{tail -f}),
+в третьем окне --- редактор.
+
+\section{Настройка}
+
+tmux читает \fpath{~/.tmux.conf}. Минимальный
+полезный конфиг:
+\begin{minted}[bgcolor=gray!6]{bash}
+# использовать C-a как префикс вместо C-b
+set -g prefix C-a
+unbind C-b
+bind C-a send-prefix
+# нумеровать окна и панели с 1
+set -g base-index 1
+set -g pane-base-index 1
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Нажали \cmd{Ctrl+b}, отпустили и ничего не произошло ---
+    нужно нажать \emph{вторую} клавишу команды.
+  \item Отключились и забыли имя сессии --- \cmd{tmux ls}.
+  \item Сессия «умерла» --- её закрыли (kill) или сервер tmux
+    завершился; detach от этого отличается.
+  \item Не можете найти панель --- \cmd{Ctrl+b z} переключает
+    zoom, \cmd{Ctrl+b q} показывает номера панелей.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+tmux --- стандарт для работы на сервере
+(\nameref{ch:02-linux-access}) и в Docker
+(\nameref{ch:19-docker-basics}): внутри контейнера можно
+поднять tmux и иметь несколько панелей для наблюдения
+за сервисами. Наблюдение за процессами в панелях ---
+переход к \nameref{ch:12-processes}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Чем detach от сессии отличается от kill сессии?
+  \item Запустите сессию, создайте два окна и разделите одно
+    окно на две панели. Как между ними переключаться?
+  \item Как отключиться от сессии, не убивая процессы?
+  \item Как переименовать или перейти к окну по номеру?
+  \item Как вернуть панель из zoom?
+\end{enumerate}

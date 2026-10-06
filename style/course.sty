@@ -1,0 +1,81 @@
+% course.sty — локальные пакеты и стили для методички.
+\ProvidesPackage{course}
+
+% Язык, кодировки и шрифты.
+% Движок: XeLaTeX (Unicode-нативный). Благодаря этому текст в готовом PDF
+% корректно извлекается, ищется и копируется (есть ToUnicode CMap), а
+% кириллица работает везде, включая блоки listings.
+\RequirePackage{fontspec}
+% Шрифты с полной кириллицей и правильным ToUnicode CMap в этой сборке
+% TeX Live. (Latin Modern Roman даёт битый CMap --- не используем.)
+\setmainfont{Noto Serif}
+\setmonofont{Noto Sans Mono}
+\RequirePackage[russian]{babel}
+
+% Макет страницы
+\RequirePackage[a4paper, margin=2.5cm]{geometry}
+\RequirePackage[expansion=false]{microtype}
+\RequirePackage{parskip}
+
+% РазрешаемTeXу чуть сильнее растягивать строки, чтобы не было
+% overfull-ящиков из-за длинных неразрывных \fpath/\cmd токенов.
+\setlength{\emergencystretch}{2em}
+
+% Математика и символы
+\RequirePackage{amsmath,amssymb}
+
+% Перекрёстные ссылки и гипертекст
+\RequirePackage[hidelinks, colorlinks, linkcolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+
+% Цвета (подключаем один раз, с опциями для TikZ/таблиц)
+\RequirePackage[svgnames,table]{xcolor}
+
+% Таблицы
+\RequirePackage{booktabs, longtable, array, multirow}
+
+% Списки
+\RequirePackage{enumitem}
+
+% Рисунки
+\RequirePackage{tikz}
+\RequirePackage{caption}
+\RequirePackage{graphicx}
+
+% Заголовки
+\RequirePackage{titlesec}
+
+% Код
+% Подсветка через minted/Pygments (не listings). Причина: listings под XeLaTeX
+% не умеет красить НЕ-ASCII символы, поэтому русские комментарии оставались
+% чёрными (в то время как английские --- зелёными). Pygments красит оба одинаково.
+% Стиль course --- локальный плагин Pygments (style/pygments-course/): цвета
+% совпадают со старым listings (комментарии #008000, ключевые слова #0000B2,
+% строки #B20000), а токен Error --- просто чёрный (без красной рамки).
+% Блоки пишутся так: \begin{minted}[bgcolor=gray!6]{bash|Makefile|Dockerfile|c}
+\RequirePackage{minted}
+\usemintedstyle{course}
+% Чёрная рамка на всю ширину текста + перенос длинных строк (breaklines),
+% чтобы код не выходил за рамку. Серый фон задаётся на каждом блоке опцией
+% bgcolor --- это обёртка minted (цветной \colorbox).
+\fvset{frame=single, framerule=0.4pt, framesep=5pt, rulecolor=\color{black},
+      breaklines=true}
+
+% Единые стили для TikZ — подключаем отдельно (легко править).
+\IfFileExists{style/tikz-styles.tex}{\input{style/tikz-styles}}{}
+
+% Полезные определения (\path занято TikZ — не переопределяем).
+% \detokenize делает все спецсимволы (\_, \^, ~, \%, \#) литеральными,
+% поэтому можно писать пути вроде ~/.ssh/id_ed25519 и команды с # без экранирования.
+\newcommand{\cmd}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\flag}[1]{\texttt{-\detokenize{#1}}}
+\newcommand{\fpath}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\file}[1]{\texttt{\detokenize{#1}}}
+
+% Коробка-совет / замечание (через lrbox — надёжно). Заголовки «Совет»/«Внимание» — на русском.
+\newsavebox{\course@notebox}
+\newenvironment{tipbox}
+  {\par\vspace{0.4em}\noindent\begin{lrbox}{\course@notebox}\begin{minipage}{\linewidth}\small\textbf{Совет.~}}
+  {\end{minipage}\end{lrbox}\par\noindent\fbox{\usebox{\course@notebox}}\par\vspace{0.4em}}
+\newenvironment{warnbox}
+  {\par\vspace{0.4em}\noindent\begin{lrbox}{\course@notebox}\begin{minipage}{\linewidth}\small\textbf{Внимание.~}}
+  {\end{minipage}\end{lrbox}\par\noindent\fbox{\usebox{\course@notebox}}\par\vspace{0.4em}}

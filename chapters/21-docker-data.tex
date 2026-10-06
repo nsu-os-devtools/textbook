@@ -1,0 +1,127 @@
+% Глава: 21-docker-data
+% Статус: наполнено (перый прогон).
+\chapter{Данные в Docker: тома и монтирование}
+\label{ch:21-docker-data}
+
+\section{Проблема: данные в контейнере теряются}
+
+Всё, что записано в файловую систему контейнера
+(не в том, что было в образе), живёт в \emph{слое
+контейнера}. Когда контейнер удаляется --- данные
+исчезают. Для сохранения нужны \textbf{тома}
+(volumes) и \textbf{монтирование} (mounts).
+
+Тома размещаются на диске вашей ВМ на \fpath{pglab.nsu.ru};
+учитывайте, что там 20--40~ГБ, и следите за местом.
+
+\section{Три способа хранения}
+
+\begin{center}
+\begin{tabular}{lp{0.24\linewidth}lp{0.24\linewidth}}
+\toprule
+\textbf{Способ} & \textbf{Хранение} & \textbf{Управление} & \textbf{Кто управляет} \\
+\midrule
+named volume & в хранилище Docker & Docker & Docker \\
+bind mount   & произвольный каталог хоста & вы & вы \\
+tmpfs        & в RAM хоста & Docker & Docker \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Именованные тома (named volumes)}
+
+Создаются и управляются Docker:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker volume create mydata          # создать
+docker volume ls                     # список
+docker volume inspect mydata         # подробно
+docker volume rm mydata              # удалить, только пустой
+\end{minted}
+
+Подключить к контейнеру:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run -d -v mydata:/var/lib/app-data myimage
+\end{minted}
+
+\cmd{-v host:container} --- общий синтаксис:
+что хост-путь (или имя тома), что путь внутри
+контейнера.
+
+\section{Bind mounts}
+
+Монтирование \emph{произвольного} каталога хоста:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run -it -v /home/me/project:/app ubuntu ls /app
+\end{minted}
+
+Полезно для разработки: меняете файл на хосте ---
+он сразу виден в контейнере.
+
+\section{tmpfs}
+
+\textbf{tmpfs} --- каталог в RAM; исчезает при
+остановке контейнера:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker run -it --tmpfs /tmp:size=100m ubuntu ls -la /tmp
+\end{minted}
+
+\section{Схема: хост, образ, контейнер, том}
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.4cm]
+    \node[storage, minimum width=4cm] (vol) {named volume\\[0.2em] (on host disk)};
+    \node[process, above right=1.2cm and 1cm of vol] (ctr) {container\\[0.2em] (ephemeral)};
+    \node[data, above left=1.2cm and 1cm of vol] (img) {image (read-only)};
+    \draw[flow, <->] (vol) -- node[right, font=\small]{mount} (ctr);
+    \draw[flow, ->] (img) -- node[left, font=\small]{copy up} (ctr);
+  \end{tikzpicture}
+  \caption{Образ --- только чтение, слой контейнера --- временный,
+    том --- постоянное хранилище.}
+  \label{fig:docker-data}
+\end{figure}
+
+\section{Практика: база данных в Docker}
+
+Типовой сценарий: образ с приложением + отдельный том
+для данных:
+\begin{minted}[bgcolor=gray!6]{bash}
+docker volume create pg_data
+docker run -d \\
+  --name pg \\
+  -v pg_data:/var/lib/postgresql/data \\
+  -e POSTGRES_PASSWORD=secret \\
+  postgres:16
+\end{minted}
+
+Даже если контейнер удалить, данные останутся в томе
+\cmd{pg_data}.
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Данные «пропали» после \cmd{docker rm} --- не
+    подключён том;
+  \item Bind mount на каталог, которого нет на хосте ---
+    Docker создаст его \emph{пустым};
+  \item Права: приложение в контейнере работает от
+    \cmd{root}, а на хосте каталог принадлежит вам ---
+    возможны конфликты прав.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Тома используются в \cmd{docker-compose}
+(\nameref{ch:22-docker-compose}); ограничения на
+ресурсы контейнеров --- \nameref{ch:23-docker-resources};
+файловая система хоста --- \nameref{ch:04-filesystem}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Почему данные в контейнере теряются после
+    его удаления?
+  \item Чем named volume отличается от bind mount?
+  \item Как подключить том к контейнеру?
+  \item Что такое tmpfs и когда его используют?
+  \item Как сохранить данные PostgreSQL при удалении
+    контейнера?
+\end{enumerate}

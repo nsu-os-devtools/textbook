@@ -1,0 +1,69 @@
+% Глава: 27-scripting-ide
+% Статус: задел (кратко), будет дополнено.
+\chapter{Скрипты оболочки и IDE}
+\label{ch:27-scripting-ide}
+
+\emph{Раздел будет дополнен в следующих версиях
+пособия. Пока --- краткая вводка и ключевые темы.}
+
+Скрипты и IDE мы используем на своей ВМ на \fpath{pglab.nsu.ru}:
+собираем и запускаем проекты там, где они и живут.
+
+\section{Скрипты оболочки}
+
+Повторяющиеся команды логично собирать в скрипт
+\fpath{run.sh}:
+\begin{minted}[bgcolor=gray!6]{bash}
+#!/usr/bin/env bash
+# сборка и тестирование проекта
+set -euo pipefail
+
+make clean
+make
+make test
+\end{minted}
+
+\cmd{set -e} --- остановка при ошибке,
+\cmd{set -u} --- ошибка на несуществующей
+переменной, \cmd{set -o pipefail} --- ошибка в
+пайпе, если любая команда пайпа упала.
+
+\section{IDE для C и системной разработки}
+
+\begin{itemize}
+  \item \textbf{VS Code} + расширения (C/C++,
+    clangd, CMake) --- популярен, настраиваем;
+  \item \textbf{CLion} --- коммерческая IDE,
+    мощный рефакторинг;
+  \item \textbf{Neovim} + LSP --- для тех, кто
+    хочет работать в терминале
+    (\nameref{ch:09-vim}).
+\end{itemize}
+
+\section{Что будет в полном разделе}
+\begin{itemize}
+  \item Синтаксис bash: переменные, циклы,
+    функции, условия;
+  \item Аргументы командной строки (\cmd{\$1},
+    \cmd{getopts});
+  \item Обработка ошибок и логирование;
+  \item Настройка IDE под C/C++: отладчик,
+    компилятор, форматирование;
+  \item LSP и автодополнение.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Скрипты используют конвейеры
+(\nameref{ch:07-text-pipelines}) и оболочки
+(\nameref{ch:03-shell}); запуск в Docker
+(\nameref{ch:19-docker-basics}); история изменений ---
+Git (\nameref{ch:25-git}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Зачем \cmd{set -euo pipefail} в скрипте?
+  \item Как передать аргументы в bash-скрипт и
+    как к ним обратиться?
+  \item Чем IDE отличается от редактора текста?
+\end{enumerate}

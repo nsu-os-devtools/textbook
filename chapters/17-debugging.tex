@@ -1,0 +1,165 @@
+% Глава: 17-debugging
+% Статус: наполнено (первый прогон).
+\chapter{Отладка: gdb и Valgrind}
+\label{ch:17-debugging}
+
+\section{Два уровня отладки}
+
+Когда программа «ведёт себя странно», есть два уровня:
+\begin{itemize}
+  \item \textbf{Логическая ошибка} --- код делает не то,
+    что задумано; ищут чтением, принтами, stepping
+    в отладчике;
+  \item \textbf{Некорректный доступ к памяти} --- код
+    обращается к чужой/свободной памяти; ищут
+    специализированными инструментами (Valgrind).
+\end{itemize}
+
+Отладку ведём на своей ВМ: утилиты \cmd{gdb} и
+\cmd{valgrind} работают на сервере \fpath{pglab.nsu.ru}, видя
+процесс там, где он запущен.
+
+Для обоих важно собирать с \cmd{-g} (отладочная
+информация) и без агрессивной оптимизации
+(\cmd{-O0}), чтобы номера строк и значения совпадали
+с исходником.
+
+\section{gdb: пошаговая отладка}
+
+\cmd{gdb} --- стандартный отладчик GNU. Типовой цикл:
+\begin{minted}[bgcolor=gray!6]{bash}
+gcc -Wall -Wextra -g -o app app.c
+gdb ./app
+\end{minted}
+
+Основные команды (внутри gdb):
+\begin{center}
+\begin{tabular}{lp{0.6\linewidth}}
+\toprule
+\textbf{Команда} & \textbf{Действие} \\
+\midrule
+\cmd{run}      & запустить программу \\
+\cmd{break main} & поставить точку останова в main \\
+\cmd{break file.c:42} & точка останова по строке \\
+\cmd{next}     & следующий шаг (не входя в функции) \\
+\cmd{step}     & шаг с заходом в функции \\
+\cmd{continue}& продолжить до следующей точки \\
+\cmd{print x}  & вывести значение переменной \\
+\cmd{backtrace}& показать стек вызовов \\
+\cmd{quit}     & выйти из gdb \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Полезно: \cmd{info locals} --- локальные переменные,
+\cmd{watch var} --- остановка при изменении переменной.
+
+\section{Valgrind: поиск проблем с памятью}
+
+\cmd{valgrind} --- инструмент статического анализа
+памяти во время выполнения. \cmd{memcheck} ---
+наиболее полезный режим:
+\begin{minted}[bgcolor=gray!6]{bash}
+valgrind --leak-check=full ./app
+\end{minted}
+
+Отчёт Valgrind показывает:
+\begin{itemize}
+  \item \textbf{definitely lost} --- точно утекла память
+    (нет ни одного указателя на неё);
+  \item \textbf{indirectly lost} --- недоступна через
+    другую утечку;
+  \item \textbf{still reachable} --- блок жив, но нет
+    указателей (обычно нормально на выходе);
+  \item \textbf{invalid read/write} --- обращение за
+    границами выделенного блока.
+\end{itemize}
+
+\begin{tipbox}
+Запускайте Valgrind на \emph{отладочной} сборке
+(\cmd{-g -O0}): он сам отключает оптимизации, но
+с вашими флагами отчёт будет точнее.
+\end{tipbox}
+
+\section{Типовые ошибки памяти}
+
+\begin{center}
+\begin{tabular}{lp{0.6\linewidth}}
+\toprule
+\textbf{Ошибка} & \textbf{Что это} \\
+\midrule
+Buffer overflow   & запись за конец массива/строки \\
+Use-after-free    & обращение к памяти после free \\
+Dangling pointer  & указатель на уничтоженный объект \\
+Double free       & дважды вызвать free на один блок \\
+Off-by-one        & индекс на единицу не так (0..n вместо 0..n-1) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Все эти ошибки в C «не падают немедленно»: программа
+может работать нормально, а потом дать странный
+результат или упасть. Valgrind находит их
+детерминированно.
+
+\section{Процесс отладки}
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.4cm]
+    \node[data] (bug) {баг};
+    \node[process, below=of bug] (repro) {воспроизвести};
+    \node[process, below=of repro] (isolate) {изоляция (бинарный поиск, принты)};
+    \node[process, below=of isolate] (gdb) {gdb / valgrind};
+    \node[process, below=of gdb] (fix) {фикс + тест};
+    \draw[flow] (bug) -- (repro);
+    \draw[flow] (repro) -- (isolate);
+    \draw[flow] (isolate) -- (gdb);
+    \draw[flow] (gdb) -- (fix);
+  \end{tikzpicture}
+  \caption{Типовой цикл отладки.}
+  \label{fig:debug-cycle}
+\end{figure}
+
+\begin{enumerate}
+  \item \textbf{Воспроизвести} стабильно --- без
+    воспроизведения отладка невозможна.
+  \item \textbf{Изолировать}: бинарный поиск по коду
+    (убрать половину), \cmd{printf} или \cmd{assert} в
+    подозрительных местах.
+  \item \textbf{Наблюдать} через gdb (значения) и
+    Valgrind (память).
+  \item \textbf{Починить} и \textbf{написать тест},
+    чтобы не повторилось (\nameref{ch:15-testing-optimization}).
+\end{enumerate}
+
+\section{Типичные ошибки в самом отладчике}
+\begin{itemize}
+  \item Запустили Valgrind на оптимизированной сборке ---
+    отчёт «гуляет»; пересоберите с \cmd{-O0 -g}.
+  \item Не поставили \cmd{-g} --- в gdb видно только
+    адреса, а не строки.
+  \item Ищут баг, который невозможно воспроизвести ---
+    сначала стабилизировать условия (фиксированные
+    данные, seed для генератора случайных чисел).
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Отладка опирается на понимание памяти
+(\nameref{ch:16-virtual-memory}) и процессов
+(\nameref{ch:12-processes}). Valgrind в Docker
+(\nameref{ch:19-docker-basics}) требует
+\fpath{/proc} и работает медленнее, но применим;
+тесты после фикса --- \nameref{ch:15-testing-optimization}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Какие флаги \cmd{gcc} нужны для отладочной
+    сборки?
+  \item Чем \cmd{step} отличается от \cmd{next} в gdb?
+  \item Что такое «definitely lost» в отчёте Valgrind?
+  \item Приведите пример off-by-one ошибки в C.
+  \item Почему Valgrind медленнее обычного запуска и
+    когда это допустимо?
+\end{enumerate}

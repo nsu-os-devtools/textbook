@@ -1,0 +1,84 @@
+% !TEX program = xelatex
+% Методическое пособие «Введение в операционные системы и инструменты разработчика»
+% Главный файл: собирает все главы в один PDF.
+% openany: главы и части начинаются на следующей свободной странице,
+% а не только на правой --- поэтому нет лишних пустых страниц.
+\documentclass[12pt,a4paper,openany]{book}
+
+\usepackage{style/course}
+
+% ---- Титульный лист ----
+\begin{document}
+\frontmatter
+\clearpage
+\begin{titlepage}
+  \begin{center}
+    \vspace*{2.5cm}
+    {\LARGE Новосибирский государственный университет\\[0.3em]
+    Факультет информационных технологий\par}
+    \vspace{3cm}
+    {\Huge\bfseries
+      Введение в операционные системы\\[0.4em]
+      и инструменты разработчика\par}
+    \vspace{1.5cm}
+    {\Large Учебно-методическое пособие\par}
+    \vspace{3cm}
+    {\large М.В. Рутман\par}
+    \vspace{2cm}
+    {\Large 2026--2027\\[0.4em]
+    1 курс ФИТ НГУ\par}
+  \end{center}
+\end{titlepage}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\clearpage
+
+% ---- Основная часть ----
+\mainmatter
+\part{Введение и рабочая среда}
+\input{chapters/01-intro}
+\input{chapters/02-linux-access}
+
+\part{ОС и командная строка}
+\input{chapters/03-shell}
+\input{chapters/04-filesystem}
+\input{chapters/05-permissions}
+\input{chapters/06-man}
+\input{chapters/07-text-pipelines}
+\input{chapters/08-packages}
+\input{chapters/09-vim}
+\input{chapters/10-tmux}
+\input{chapters/11-mc}
+\input{chapters/12-processes}
+
+\part{Разработка на C и сборка}
+\input{chapters/13-c-compilation}
+\input{chapters/14-make}
+\input{chapters/15-testing-optimization}
+\input{chapters/16-virtual-memory}
+\input{chapters/17-debugging}
+
+\part{Взаимодействие процессов и виртуализация}
+\input{chapters/18-ipc}
+\input{chapters/19-docker-basics}
+\input{chapters/20-dockerfile}
+\input{chapters/21-docker-data}
+\input{chapters/22-docker-compose}
+\input{chapters/23-docker-resources}
+
+\part{Среда разработчика}
+\input{chapters/24-security}
+\input{chapters/25-git}
+\input{chapters/26-ci}
+\input{chapters/27-scripting-ide}
+
+% ---- Приложения: отдельная часть (не внутри «Среды разработчика») ----
+\part{Приложения}
+\appendix
+\input{appendix/glossary}
+\input{appendix/cheatsheets}
+\input{appendix/references}
+\input{appendix/roadmap}
+
+\end{document}

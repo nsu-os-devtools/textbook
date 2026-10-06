@@ -1,0 +1,207 @@
+% Глава: 25-git
+% Статус: наполнено (первый прогон).
+\chapter{Git: системы контроля версий}
+\label{ch:25-git}
+
+\section{Зачем нужен контроль версий}
+
+Версия кода --- это состояние проекта в какой-то
+момент. Без контроля версий трудно: вернуть старый
+вариант, понять, кто и что менял, работать над
+несколькими задачами параллельно, делиться кодом.
+\textbf{Git} --- распределённая система контроля
+версий (VCS): полная история на каждой машине,
+быстрые локальные операции, ветвление как базовый
+механизм.
+
+Работаем с Git на своей ВМ на \fpath{pglab.nsu.ru}: репозиторий
+живёт на сервере, а удалённым хостом служит, например, GitHub
+или внутренний Git на сети университета.
+
+\section{Распределённая модель}
+
+В централизованных системах (SVN) есть один центральный
+сервер. В Git \emph{каждая копия} --- полноценное
+хранилище со всей историей; ``сервер''
+(\cmd{github.com}, \cmd{gitlab.com}) нужен для
+координации, а не как обязательная точка. Работать
+можно офлайн, коммиты локальные, а \cmd{push} ---
+это синхронизация.
+
+\section{Три области}
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=0.9cm]
+    \node[data, minimum width=2.9cm] (wd) {working tree\\[0.2em] (files on disk)};
+    \node[process, right=of wd, minimum width=2.9cm] (idx) {index\\[0.2em] (staging area)};
+    \node[process, right=of idx, minimum width=2.9cm] (repo) {repository\\[0.2em] (commits)};
+    \node[process, right=of repo, minimum width=2.9cm] (remote) {remote\\[0.2em] (origin)};
+    \draw[flow] (wd) -- node[above, font=\small]{git add} (idx);
+    \draw[flow] (idx) -- node[above, font=\small]{git commit} (repo);
+    \draw[flow, <->] (repo) -- node[above, font=\small]{push / pull} (remote);
+  \end{tikzpicture}
+  \caption{Три области Git: рабочая директория, индекс, хранилище.}
+  \label{fig:git-areas}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{working tree} --- файлы на диске;
+  \item \textbf{index} (staging area) --- набор
+    изменений, которые попадут в следующий коммит;
+  \item \textbf{repository} --- цепочка коммитов;
+  \item \textbf{remote} --- удалённое хранилище
+    (\cmd{origin}).
+\end{itemize}
+
+\section{Первые шаги}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git init                 # создать здесь новый репозиторий
+git clone <url>          # скопировать существующий репозиторий
+cd myrepo
+\end{minted}
+
+\section{Базовый цикл}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git status               # что изменилось
+git add file.txt         # добавить один файл в индекс
+git add .                # добавить все изменения этого каталога
+git commit -m "message"  # создать коммит
+git log --oneline        # краткая история
+\end{minted}
+
+\textbf{Коммит} --- атомарный снимок: кто, когда, что
+изменил и почему. Текст коммита описывает \emph{что}
+и \emph{зачем}.
+
+\section{Ветвление и слияние}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git branch feature-x     # создать ветку
+git switch feature-x     # переключиться на неё
+git switch -c feature-y  # создать и переключиться за один шаг
+git merge feature-x      # слить ветку в текущую
+git branch -d feature-x  # удалить после слияния
+\end{minted}
+
+\textbf{merge} --- объединяет историю двух веток,
+создавая коммит-слияние. \textbf{rebase} ---
+``пересаживает'' вашу ветку на другую, история
+линейнее, но коммиты переписываются.
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git rebase main          # переиграть эту ветку поверх main
+\end{minted}
+
+\begin{tipbox}
+Правило: \cmd{merge} для публичных веток (честная
+история), \cmd{rebase} для личных веток до
+публикации (чистая история). Никогда не
+переписывайте уже опубликованную историю.
+\end{tipbox}
+
+\section{Работа с удалённым хранилищем}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git remote add origin <url>   # указать удалённый репозиторий
+git push -u origin main       # отправить и задать upstream
+git pull                      # забрать и слить с upstream
+git fetch                     # только скачать, без слияния
+git branch -r                 # список удалённых веток
+\end{minted}
+
+\section{\cmd{.gitignore}}
+
+Файл \fpath{.gitignore} --- какие файлы Git
+\emph{не} отслеживает:
+\begin{minted}[bgcolor=gray!6]{bash}
+# артефакты сборки
+*.o
+*.a
+out/
+build/
+
+# редактор и IDE
+.vscode/
+.idea/
+*.swp
+
+# секреты и локальная конфигурация
+.env
+config.local.yml
+\end{minted}
+
+\section{Просмотр изменений и история}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git diff                 # недобавленные изменения
+git diff --staged        # добавленные в индекс
+git diff HEAD            # все изменения относительно последнего коммита
+git log --oneline --graph --all   # наглядная история
+git show <commit>        # что изменил коммит
+\end{minted}
+
+\section{Откат и исправление}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git reset --soft HEAD~1    # отменить последний коммит, оставить изменения в индексе
+git reset --mixed HEAD~1   # отменить последний коммит, не добавляя в индекс
+git reset --hard HEAD~1    # отменить последний коммит и выбросить изменения, осторожно!
+git revert <commit>        # создать новый коммит, отменяющий указанный
+\end{minted}
+
+\cmd{reset} двигает указатель ветки; \cmd{revert} ---
+безопасная операция, создающая новый коммит с
+обратным эффектом. Для публичной истории используйте
+\cmd{revert}.
+
+\section{\cmd{.gitconfig} и идентификация}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+git config --global user.name "Jane Doe"
+git config --global user.email "jane@example.org"
+git config --global init.defaultBranch main
+git config --global core.editor vim
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Забыли \cmd{git add} перед \cmd{commit} ---
+    коммит пустой;
+  \item В коммите ``fixed bug'' без объяснения ---
+    невозможно понять, \emph{какой} баг и \emph{почему}
+    так;
+  \item \cmd{git push --force} на общую ветку ---
+    история переписывается, у коллег конфликты;
+  \item Секреты (пароли, токены) в репозитории ---
+    добавьте в \cmd{.gitignore} и \emph{измените
+    секрет};
+  \item \cmd{git merge} и \cmd{git rebase} в одном
+    рабочем процессе --- путаница; выберите один
+    подход.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Git --- это то, как делятся проекты в команде
+(\nameref{ch:27-scripting-ide}) и что
+интегрируют в CI (\nameref{ch:26-ci}). В Docker
+(\nameref{ch:19-docker-basics}) образы часто
+тегируются номером коммита.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Что такое коммит и чем он отличается от
+    снимка в резервном копировании?
+  \item Чем \cmd{merge} отличается от \cmd{rebase}?
+    Когда что использовать?
+  \item Как создать ветку, переключиться в неё и
+    слить обратно?
+  \item Что делает \cmd{git reset --hard} и почему он
+    опасен?
+  \item Какие файлы обычно попадают в
+    \cmd{.gitignore}?
+  \item Чем \cmd{pull} отличается от \cmd{fetch}?
+\end{enumerate}

@@ -1,0 +1,176 @@
+% Глава: 13-c-compilation
+% Статус: наполнено (первый прогон).
+\chapter{Язык C и компиляция}
+\label{ch:13-c-compilation}
+
+\section{Язык C: зачем и что важно}
+
+C --- низкий, близкий к машинному коду язык: предсказуемые
+свойства, отсутствие скрытых механизмов, прямой доступ к
+памяти. Именно поэтому ядро Linux и большинство системных
+инструментов написаны на C. Для курса важно понимать:
+как работает компилятор, как линковщик собирает программу,
+как устроена память.
+
+Компилируем на сервере: \cmd{gcc} запускается на вашей ВМ
+\fpath{pglab.nsu.ru}, и все артефакты сборки тоже остаются на ней.
+
+\section{Компилятор и интерпретатор}
+
+\textbf{Компилятор} (C) переводит весь исходный код в
+машинный код \emph{до} запуска; результат --- исполняемый
+файл. \textbf{Интерпретатор} (Python, Ruby, большинство
+JS) выполняет исходный код «на лету». Компиляция даёт
+быстроту выполнения, интерпретация --- простоту запуска.
+
+\section{Этапы компиляции C}
+
+Командой \cmd{gcc} вы обычно делаете всё сразу, но внутри
+несколько этапов:
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.3cm]
+    \node[data] (src) {source.c};
+    \node[process, right=of src] (pp) {preprocess\\[0.2em] (gcc -E)};
+    \node[process, right=of pp] (asm) {assemble\\[0.2em] to .o};
+    \node[process, right=of asm] (lnk) {link\\[0.2em] (ld)};
+    \node[data, right=of lnk] (bin) {binary};
+    \draw[flow] (src) -- (pp);
+    \draw[flow] (pp) -- (asm);
+    \draw[flow] (asm) -- (lnk);
+    \draw[flow] (lnk) -- (bin);
+  \end{tikzpicture}
+  \caption{Этапы: препроцессор, компиляция в объект, линковка.}
+  \label{fig:c-pipeline}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{Preprocessing} (\cmd{gcc -E}) --- раскрытие
+    \cmd{\#include}, \cmd{\#define}, макросов;
+  \item \textbf{Compilation} --- перевод в assembly;
+  \item \textbf{Assembly} --- перевод assembly в машинный
+    код объектного файла \fpath{.o};
+  \item \textbf{Linking} --- сборка объектных файлов и
+    библиотек в один исполняемый файл.
+\end{itemize}
+
+\section{Типовой сценарий}
+
+\begin{minted}[bgcolor=gray!6]{c}
+// hello.c
+#include <stdio.h>
+
+int main(void) {
+    int n = 42;
+    printf("answer: %d\n", n);
+    return 0;
+}
+\end{minted}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+gcc -Wall -Wextra -o hello hello.c   # за один раз: исходник -> бинарник
+./hello                              # запустить
+gcc -c hello.c                       # только компиляция: hello.c -> hello.o
+ld hello.o -o hello -lc              # собрать вручную, нужна библиотека
+\end{minted}
+
+\section{Флаги \cmd{gcc}}
+
+\begin{center}
+\begin{tabular}{lp{0.65\linewidth}}
+\toprule
+\textbf{Флаг} & \textbf{Назначение} \\
+\midrule
+\cmd{-c}        & только компиляция в объектный файл, без линковки \\
+\cmd{-o name}   & имя выходного файла \\
+\cmd{-I dir}    & каталог для поиска заголовков (\cmd{\#include}) \\
+\cmd{-L dir}    & каталог для поиска библиотек на этапе линковки \\
+\cmd{-l lib}    & подключить библиотеку (например \cmd{-lm} --- math) \\
+\cmd{-Wall} \cmd{-Wextra} & включение большинства предупреждений \\
+\cmd{-g}        & отладочная информация (для gdb, valgrind) \\
+\cmd{-O0 -O1 -O2 -O3} & уровни оптимизации \\
+\cmd{-std=c11}  & выбрать стандарт языка \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{tipbox}
+Всегда компилируйте с \cmd{-Wall -Wextra}: предупреждения
+компилятора ловят типовые ошибки (неиспользуемые переменные,
+потерянные значения) раньше, чем рантайм.
+\end{tipbox}
+
+\section{Заголовочные файлы и include-пути}
+
+C делит код на \textbf{модули} (\fpath{.c} файлы) с
+публичным интерфейсом в \fpath{.h} заголовках. \cmd{\#include
+"file.h"} ищет в текущем каталоге, \cmd{\#include <file.h>} ---
+в системных каталогах. Если заголовки лежат не в
+системных каталогах, укажите их через \cmd{-I}.
+
+Типовой проект:
+\begin{minted}[bgcolor=gray!6]{bash}
+project/
+  src/main.c
+  src/util.c
+  src/util.h
+  Makefile
+\end{minted}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+gcc -Wall -Wextra -Isrc -o app src/main.c src/util.c
+\end{minted}
+
+\section{Библиотеки}
+
+\textbf{Статическая} (\fpath{libfoo.a}) --- код библиотеки
+встраивается в ваш бинарник; бинарник самодостаточен.
+\textbf{Динамическая} (\fpath{libfoo.so}) --- общий код
+на диске; бинарник ссылается на него во время выполнения.
+Динамические меньше по размеру и позволяют обновлять
+библиотеку без пересборки.
+
+\begin{minted}[bgcolor=gray!6]{bash}
+gcc -o prog main.c -L./lib -lfoo      # линковка с libfoo
+ldd prog                              # показать используемые общие библиотеки
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item \emph{undefined reference to ...} --- линковщик
+    не нашёл функцию; проверьте, все ли \fpath{.c}
+    переданы и не забыта ли библиотека.
+  \item \emph{implicit declaration of function} --- забыли
+    \cmd{\#include} или опечатались в имени; при
+    \cmd{-Wall} это предупреждение, но лучше править.
+  \item Выходной файл не запускается --- не тот процессор
+    или отсутствует библиотека; \cmd{ldd} покажет, что
+    не хватает.
+  \item Код «работает, но странно» --- чаще всего это
+    обращение к неинициализированной памяти; см.
+    \nameref{ch:17-debugging}.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Сборка проекта через \cmd{make} --- \nameref{ch:14-make};
+тестирование и оптимизация --- \nameref{ch:15-testing-optimization};
+память и как её распределяет ОС ---
+\nameref{ch:16-virtual-memory}; отладка и поиск утечек ---
+\nameref{ch:17-debugging}. Docker-образы с C-проектами
+часто включают \cmd{gcc} и \cmd{make}
+(\nameref{ch:20-dockerfile}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Объясните четыре этапа компиляции C. Что
+    генерирует каждый из них?
+  \item Чем \cmd{gcc -c} отличается от \cmd{gcc}?
+  \item Как скомпилировать проект из нескольких
+    \fpath{.c} с заголовками в подкаталоге?
+  \item В чём разница между статической и динамической
+    библиотекой?
+  \item Какие флаги вы бы использовали для отладочной
+    и для оптимизированной сборки?
+\end{enumerate}

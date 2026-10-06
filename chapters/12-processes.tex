@@ -1,0 +1,158 @@
+% Глава: 12-processes
+% Статус: наполнено (первый прогон).
+\chapter{Процессы и ресурсы}
+\label{ch:12-processes}
+
+\section{Что такое процесс}
+
+\textbf{Процесс} --- это программа в состоянии исполнения:
+свой набор инструкций, память, открытые файлы, потоки.
+Каждый процесс получает уникальный идентификатор \textbf{PID}
+(Process ID) и работает от имени пользователя
+(\nameref{ch:05-permissions}).
+
+В этой главе процессы --- это то, что запущено на вашей ВМ:
+компиляторы, тесты, контейнеры на сервере \fpath{pglab.nsu.ru}.
+
+Процесс имеет \textbf{состояния} (видны в \cmd{ps}):
+\begin{itemize}
+  \item \cmd{R} --- running / runnable (выполняется или ждёт CPU);
+  \item \cmd{S} --- sleeping (ждёт событие: ввод, диск, сеть);
+  \item \cmd{Z} --- zombie (завершился, но родитель ещё не
+    «забрал» результат).
+\end{itemize}
+
+\section{Иерархия процессов}
+
+Все процессы, кроме первого (\cmd{init} / \cmd{systemd}),
+являются чьими-то дочерними. Родительский идентификатор ---
+\textbf{PPID}. Когда оболочка запускает команду
+(\nameref{ch:03-shell}), команда --- дочерний процесс
+оболочки.
+
+\begin{figure}[htb]
+  \centering
+  \begin{tikzpicture}[node distance=1.3cm]
+    \node[process] (init) {systemd (PID 1)};
+    \node[process, below left=1.2cm and -0.4cm of init] (sshd) {sshd};
+    \node[process, below right=1.2cm and -0.4cm of init] (cron) {cron};
+    \node[process, below left=1.2cm and -0.4cm of sshd] (bash) {bash};
+    \node[process, below right=1.2cm and -0.4cm of sshd] (vim) {vim};
+    \draw[flow] (init) -- (sshd);
+    \draw[flow] (init) -- (cron);
+    \draw[flow] (sshd) -- (bash);
+    \draw[flow] (sshd) -- (vim);
+  \end{tikzpicture}
+  \caption{Дерево процессов: каждый процесс имеет родителя.}
+  \label{fig:proc-tree}
+\end{figure}
+
+\section{Просмотр процессов}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+ps aux                 # все процессы: пользовательские и системные
+ps -ef                 # полный формат, с PPID
+ps -u <user>           # процессы одного пользователя
+ps aux | grep <name>   # найти процесс по именем
+top                    # «живой» просмотр с обновлением
+htop                   # интерактивно, с цветом, удобнее читать
+\end{minted}
+
+Колонки \cmd{ps aux}, которые стоит читать: \textbf{USER},
+\textbf{PID}, \textbf{\%CPU}, \textbf{\%MEM},
+\textbf{COMMAND}. В \cmd{top}/\cmd{htop} сверху видна
+сводка: загрузка CPU, свободная память, количество
+процессов.
+
+\section{Сигналы и завершение процессов}
+
+Процессу можно отправить \textbf{сигнал} --- системное
+уведомление. Важнейшие:
+
+\begin{center}
+\begin{tabular}{clp{0.5\linewidth}}
+\toprule
+\textbf{Сигнал} & \textbf{Номер} & \textbf{Действие} \\
+\midrule
+SIGHUP  & 1  & «отключён терминал»; процесс обычно завершается \\
+SIGINT  & 2  & прерывание (обычно \cmd{Ctrl+C} в терминале) \\
+SIGQUIT & 3  & завершение с дампом (редко) \\
+SIGTERM & 15 & вежливая просьба завершиться (по умолчанию) \\
+SIGKILL & 9  & принудительное завершение (процесс не может перехватить) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+kill 1234              # SIGTERM для PID 1234
+kill -9 1234           # SIGKILL, принудительно
+kill -TERM <pid>       # явно
+pkill <name>           # по имени процесса
+pkill -f "python app"  # по полной командной строке
+\end{minted}
+
+Правило: сначала \cmd{SIGTERM}, и только если процесс не
+реагирует --- \cmd{SIGKILL}. Вежливое завершение даёт
+процессу закрыть файлы и освободить ресурсы.
+
+\section{Фоновые и передние задачи}
+
+Запустить процесс в фоне --- добавить \cmd{\&} в конец
+команды:
+\begin{minted}[bgcolor=gray!6]{bash}
+long_job.sh &        # запустить в фоне
+jobs               # фоновые задания этой оболочки
+fg                 # вернуть последнее задание на передний план
+fg %2              # вернуть задание №2 на передний план
+bg                 # возобновить остановленное задание в фоне
+Ctrl+Z             # остановить текущее задание
+\end{minted}
+
+\section{Ресурсы: CPU и память}
+
+Linux выделяет процессу ресурсы по запросу: долю CPU
+(время процессора) и виртуальную память
+(\nameref{ch:16-virtual-memory}). Мониторинг:
+\begin{minted}[bgcolor=gray!6]{bash}
+top                  # загрузка по CPU и по процессам
+htop                 # интерактивно
+vmstat 1             # системная статистика раз в секунду
+free -h              # сводка по памяти
+\end{minted}
+
+\section{Типичные ошибки}
+\begin{itemize}
+  \item Процесс «завис» --- посмотрите в \cmd{top}, не
+    использует ли он 100\% CPU; иногда достаточно
+    \cmd{kill} (SIGTERM).
+  \item \cmd{kill 9} не работает --- правильно
+    \cmd{kill -9}; без знака минус это PID 9, а не флаг.
+  \item Задача в фоне «потерялась» --- \cmd{jobs},
+    затем \cmd{fg} или \cmd{bg}.
+  \item После \cmd{Ctrl+C} сервер не запустить снова ---
+    убедитесь, что старый процесс реально завершён
+    (\cmd{ps aux | grep ...}).
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+Процессы --- центральное понятие ОС. Потоки вывода
+(\nameref{ch:07-text-pipelines}) принадлежат процессам;
+запуск и остановка контейнеров
+(\nameref{ch:19-docker-basics}) --- это запуск и
+остановка процессов в изолированном окружении.
+Взаимодействие процессов между собой ---
+\nameref{ch:18-ipc}; распределение памяти ---
+\nameref{ch:16-virtual-memory}.
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Как узнать PID запущенного процесса?
+  \item Чем \cmd{SIGTERM} отличается от \cmd{SIGKILL}?
+    Почему второй «невозможно перехватить»?
+  \item Запустите долгую команду в фоне, остановите её
+    (\cmd{Ctrl+Z}), затем возобновите в фоне.
+  \item Как увидеть, какие процессы принадлежат текущему
+    пользователю?
+  \item Что такое zombie-процесс и почему он возникает?
+\end{enumerate}

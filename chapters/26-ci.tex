@@ -1,0 +1,58 @@
+% Глава: 26-ci
+% Статус: задел (кратко), будет дополнено.
+\chapter{CI/CD: автоматизация сборки и поставки}
+\label{ch:26-ci}
+
+\emph{Раздел будет дополнен в следующих версиях
+пособия. Пока --- краткая вводка и ключевые темы.}
+
+\section{Что такое CI/CD}
+
+\textbf{CI} (Continuous Integration) --- автоматический
+запуск сборки и тестов на каждый push в
+репозиторий. \textbf{CD} (Continuous
+Delivery/Deployment) --- автоматическое
+подготовка/выкатка релиза. Инструменты: GitHub
+Actions, GitLab CI, Jenkins.
+
+Обычно CI работает в облаке (GitHub Actions), но
+самохостный runner можно развернуть и на сервере
+лаборатории, чтобы сборки проходили в той же среде, что и
+ваши ВМ на \fpath{pglab.nsu.ru}.
+
+\section{Типовой пайплайн}
+
+\begin{minted}[bgcolor=gray!6]{bash}
+# псевдоструктура CI-конвейера
+on: push
+jobs:
+  build:
+    - checkout code
+    - build project (make / docker build)
+    - run tests
+    - (optional) deploy
+\end{minted}
+
+\section{Что будет в полном разделе}
+\begin{itemize}
+  \item Конфигурация GitHub Actions / GitLab CI;
+  \item Матрица сборки (несколько версий ОС/зависимостей);
+  \item Кэширование зависимостей;
+  \item Публикация артефактов и образов;
+  \item Деплой в staging и прод.
+\end{itemize}
+
+\section{Связь с остальным курсом}
+
+CI опирается на \cmd{make} (\nameref{ch:14-make}),
+тестирование
+(\nameref{ch:15-testing-optimization}), Docker
+(\nameref{ch:19-docker-basics}) и Git
+(\nameref{ch:25-git}).
+
+\section{Задачи для самопроверки}
+\begin{enumerate}
+  \item Что даёт CI команде разработчиков?
+  \item Какие этапы обычно есть в пайплайне?
+  \item Какую роль играет Docker в CD?
+\end{enumerate}

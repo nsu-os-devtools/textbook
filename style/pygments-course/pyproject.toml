@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "course-pygments"
+version = "0.1.0"
+description = "Pygments 'course' style for the devtools course manual"
+requires-python = ">=3.8"
+
+[project.entry-points."pygments.styles"]
+course = "course_style:Course"
