@@ -37,7 +37,7 @@ ls > out.txt 2> err.txt    # явно разделить
 tee out.txt < big.txt       # показать на экране и в файле
 \end{minted}
 
-Запомнить два оператора: \cmd{>} --- заменить/создать файл,
+Запомните два оператора: \cmd{>} --- заменить/создать файл,
 \cmd{>>} --- дописать.
 
 \begin{warnbox}
@@ -82,7 +82,7 @@ ps aux | sort -k3 -nr | head
 \end{tabular}
 \end{center}
 
-\cmd{grep} --- самая частая. Основные флаги:
+\cmd{grep} --- самая часто используемая. Основные флаги:
 \begin{minted}[bgcolor=gray!6]{bash}
 grep ERROR log.txt         # строки, содержащие ERROR
 grep -i error log.txt      # без учёта регистра
@@ -95,11 +95,11 @@ grep -n "user" config      # с номерами строк
 \section{Типовой сценарий анализа}
 
 \begin{sloppypar}
-На практике такой лог-файл обычно лежит на вашей ВМ на сервере
+На практике лог-файл обычно лежит на вашей ВМ на сервере
 \fpath{pglab.nsu.ru}. Допустим, в \fpath{events.log} строки вида
 \cmd{timestamp|level|source|file|status}.
 \end{sloppypar}
-Частые вопросы:
+Частые методы использования \cmd{grep}:
 \begin{minted}[bgcolor=gray!6]{bash}
 wc -l < events.log                       # общее число строк
 grep -c ERROR events.log                 # число ошибок
