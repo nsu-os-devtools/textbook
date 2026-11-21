@@ -1,127 +1,205 @@
-% Глава: 21-docker-data
-% Статус: наполнено (перый прогон).
 \chapter{Данные в Docker: тома и монтирование}
 \label{ch:21-docker-data}
+\begingroup
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.25cm}
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\makeatletter
+\let\@afterindentfalse\@afterindenttrue
+\@afterindenttrue
+\makeatother
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\raggedbottom
+\titlespacing{\section}{0pt}{1.9ex plus .3ex minus .2ex}{.9ex}
+\titlespacing{\subsection}{0pt}{1.8ex plus .3ex minus .2ex}{.9ex}
+\captionsetup[figure]{font=footnotesize,justification=centering,singlelinecheck=false}
+\fvset{breaksymbolleft={},breaksymbolright={}}
 
-\section{Проблема: данные в контейнере теряются}
+\section{Файловая система контейнера}
 
-Всё, что записано в файловую систему контейнера
-(не в том, что было в образе), живёт в \emph{слое
-контейнера}. Когда контейнер удаляется --- данные
-исчезают. Для сохранения нужны \textbf{тома}
-(volumes) и \textbf{монтирование} (mounts).
+Чтобы несколько контейнеров могли использовать один образ и независимо изменять свои файлы, слои образа используются только для чтения. При создании каждого контейнера Docker добавляет отдельный записываемый слой. Например, OverlayFS объединяет нижние слои образа и верхний слой контейнера в единое дерево каталогов (рис.~\ref*{fig:docker-data}). Когда процесс изменяет содержимое файла из нижнего слоя, OverlayFS предварительно копирует его в верхний слой.
 
-Тома размещаются на диске вашей ВМ на \fpath{pglab.nsu.ru};
-учитывайте, что там 20--40~ГБ, и следите за местом.
+Записываемый слой относится к конкретному контейнеру, поэтому файлы в нём сохраняются при остановке и повторном запуске, но удаляются вместе с контейнером. Для данных, которые должны пережить его пересоздание, используют отдельное хранилище.
 
-\section{Три способа хранения}
-
-\begin{center}
-\begin{tabular}{lp{0.24\linewidth}lp{0.24\linewidth}}
-\toprule
-\textbf{Способ} & \textbf{Хранение} & \textbf{Управление} & \textbf{Кто управляет} \\
-\midrule
-named volume & в хранилище Docker & Docker & Docker \\
-bind mount   & произвольный каталог хоста & вы & вы \\
-tmpfs        & в RAM хоста & Docker & Docker \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\section{Именованные тома (named volumes)}
-
-Создаются и управляются Docker:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker volume create mydata          # создать
-docker volume ls                     # список
-docker volume inspect mydata         # подробно
-docker volume rm mydata              # удалить, только пустой
-\end{minted}
-
-Подключить к контейнеру:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run -d -v mydata:/var/lib/app-data myimage
-\end{minted}
-
-\cmd{-v host:container} --- общий синтаксис:
-что хост-путь (или имя тома), что путь внутри
-контейнера.
-
-\section{Bind mounts}
-
-Монтирование \emph{произвольного} каталога хоста:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run -it -v /home/me/project:/app ubuntu ls /app
-\end{minted}
-
-Полезно для разработки: меняете файл на хосте ---
-он сразу виден в контейнере.
-
-\section{tmpfs}
-
-\textbf{tmpfs} --- каталог в RAM; исчезает при
-остановке контейнера:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run -it --tmpfs /tmp:size=100m ubuntu ls -la /tmp
-\end{minted}
-
-\section{Схема: хост, образ, контейнер, том}
-
-\begin{figure}[htb]
+\begin{figure}[!htb]
   \centering
-  \begin{tikzpicture}[node distance=1.4cm]
-    \node[storage, minimum width=4cm] (vol) {named volume\\[0.2em] (on host disk)};
-    \node[process, above right=1.2cm and 1cm of vol] (ctr) {container\\[0.2em] (ephemeral)};
-    \node[data, above left=1.2cm and 1cm of vol] (img) {image (read-only)};
-    \draw[flow, <->] (vol) -- node[right, font=\small]{mount} (ctr);
-    \draw[flow, ->] (img) -- node[left, font=\small]{copy up} (ctr);
+  \begin{tikzpicture}[node distance=5mm]
+    \node[ext,minimum width=34mm] (base) {Слои образа\\только чтение};
+    \node[io,above=of base,minimum width=34mm] (rw) {Слой для записи};
+    \node[process,right=12mm of rw,yshift=-8mm] (fs) {Дерево каталогов\\контейнера};
+    \node[storage,right=26mm of fs] (vol) {Том};
+    \draw[flow] (base) -- (fs);
+    \draw[flow] (rw) -- (fs);
+    \draw[bidir] (fs) -- node[above,font=\scriptsize]{монтирование} (vol);
   \end{tikzpicture}
-  \caption{Образ --- только чтение, слой контейнера --- временный,
-    том --- постоянное хранилище.}
+\caption{Файловая система контейнера объединяет слои образа и слой для записи. Запись в смонтированный каталог идёт в том.}
   \label{fig:docker-data}
 \end{figure}
 
-\section{Практика: база данных в Docker}
+\section{Способы хранения}
 
-Типовой сценарий: образ с приложением + отдельный том
-для данных:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker volume create pg_data
-docker run -d \\
-  --name pg \\
-  -v pg_data:/var/lib/postgresql/data \\
-  -e POSTGRES_PASSWORD=secret \\
-  postgres:16
+Docker предлагает несколько способов хранения данных вне записываемого слоя: тома для данных приложений, привязку для доступа к конкретным файлам хоста и \cmd{tmpfs} для временного хранения. Каждый из этих способов предполагает монтирование хранилища по заданному пути внутри контейнера. Пока оно подключено, прежнее содержимое каталога по указанному пути скрыто.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{.25\linewidth}
+                   >{\raggedright\arraybackslash}p{.33\linewidth}
+                   >{\raggedright\arraybackslash}p{.36\linewidth}@{}}
+\toprule
+\textbf{Способ} & \textbf{Размещение} & \textbf{После удаления контейнера} \\
+\midrule
+Слой контейнера & Хранилище Docker & Удаляется \\
+Том & Хранилище под управлением Docker & Обычно сохраняется \\
+Привязка & Файл или каталог хоста & Сохраняется на хосте \\
+\cmd{tmpfs} & Память с возможной подкачкой & Исчезает при остановке \\
+\bottomrule
+\end{tabular}
+\end{minipage}\par\addvspace{10pt}
+
+\section{Тома}
+
+Том представляет собой хранилище под управлением Docker. При использовании локального драйвера Docker самостоятельно определяет место хранения на хосте. Поскольку том существует независимо от контейнера, его можно подключить к другому контейнеру. Именованный том можно повторно подключить по имени. Анонимному тому Docker присваивает имя автоматически, поэтому при новом вызове \cmd{docker run} прежний том сам по себе не подключается. Если пустой том монтируется поверх непустого каталога контейнера, Docker по умолчанию копирует содержимое этого каталога в том. Для отключения копирования используют параметр \cmd{volume-nocopy} в конструкции \cmd{--mount}.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Проверим сохранение данных после удаления контейнера. Для опыта выберите свободное имя тома, например \cmd{course-data}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker volume create course-data
+docker volume ls
+docker volume inspect course-data
+docker run --rm -v course-data:/data debian:12-slim sh -c \
+    'echo hello > /data/message'
+docker run --rm -v course-data:/data debian:12-slim cat \
+    /data/message
 \end{minted}
+\end{minipage}\par\addvspace{10pt}
 
-Даже если контейнер удалить, данные останутся в томе
-\cmd{pg_data}.
+Второй контейнер выведет \cmd{hello}: хотя первый контейнер был удалён, записанные им данные остались в именованном томе. Параметр \cmd{--rm} не удаляет именованные тома, но при его использовании анонимные тома, связанные с контейнером, обычно удаляются автоматически.
 
+{\setlength{\linewidth}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}
+\begin{warnbox}
+Команда \cmd{docker volume rm course-data} удалит том вместе с данными, если ни один контейнер его не использует. Том не обязан быть пустым. Остановленный контейнер также может удерживать ссылку на том.
+\end{warnbox}
+}
+
+\section{Привязка файлов и каталогов хоста}
+
+В отличие от тома, при привязке (bind mount) пользователь сам указывает файл или каталог хоста, который будет доступен по заданному пути внутри контейнера. Если права доступа разрешают запись, изменения содержимого будут видны и на хосте, и в контейнере. Создайте временный каталог и подключите его только для чтения:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+mount_dir=$(mktemp -d) &&
+printf 'hello\n' > "$mount_dir/message" &&
+docker run --rm --mount \
+    "type=bind,src=$mount_dir,dst=/data,ro" debian:12-slim cat \
+    /data/message
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+В данном примере параметр \cmd{ro} запрещает запись через точку монтирования, защищая исходный файл от изменения из контейнера. Без этого параметра привязка по умолчанию допускает запись, поэтому изменения могут затронуть данные хоста. Путь источника относится к машине, на которой работает демон Docker. После опыта удалите временный файл и каталог в том же терминале:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+rm "${mount_dir:?}/message"
+rmdir "$mount_dir"
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Параметр \cmd{--mount} позволяет явно указать тип монтирования, источник и назначение. В краткой форме \cmd{-v} источник и путь назначения разделяются двоеточием. Если источник привязки отсутствует, \cmd{-v} создаёт каталог на хосте, а \cmd{--mount} по умолчанию сообщает об ошибке. Для подключения тома подходят обе формы. Например, при использовании \cmd{--mount} указывают \cmd{type=volume}, \cmd{src=course-data} и \cmd{dst=/data}.
+
+При работе с подключёнными файлами важно учитывать права доступа. Если идентификаторы пользователей не преобразуются, ядро проверяет права по числовым UID и GID процесса, а не по именам пользователей. Если доступ запрещён, проверьте владельца, права и параметры монтирования. Не предоставляйте всем пользователям права записи для устранения ошибки.
+
+\section{Временное монтирование tmpfs}
+
+Если приложению требуется хранить данные только во время работы контейнера, можно подключить файловую систему \cmd{tmpfs}, использующую память. При остановке контейнера её содержимое исчезает. Если на хосте используется подкачка, часть страниц может оказаться на диске, поэтому применение \cmd{tmpfs} не гарантирует полного отсутствия дисковых копий.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker run --rm --tmpfs /work:size=16m debian:12-slim sh -c \
+    'echo temp > /work/file; cat /work/file'
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+В данном примере размер временной файловой системы ограничен 16 МиБ, а после завершения контейнера созданный файл \file{/work/file} исчезнет.
+
+\section{Практика: хранение данных PostgreSQL}
+
+Проверим сохранение данных на примере PostgreSQL, используя официальный образ версии 16. Данные базы хранятся в томе, подключённом по пути \fpath{/var/lib/postgresql/data}. Порт базы на ВМ не публикуется. При изучении данного примера используйте учебный пароль и свободные имена контейнера и тома.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker volume create course-pgdata
+docker run -d --name course-pg -e \
+    POSTGRES_PASSWORD=course-demo -v \
+    course-pgdata:/var/lib/postgresql/data postgres:16
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Проверьте готовность сервера принимать TCP-соединения. При необходимости повторите команду через несколько секунд:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker exec course-pg pg_isready -h 127.0.0.1 -U postgres
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}После успешной проверки создайте таблицу, добавьте строку и удалите контейнер:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker exec course-pg psql -U postgres -v ON_ERROR_STOP=1 -c \
+    'CREATE TABLE demo (n integer);' -c \
+    'INSERT INTO demo VALUES (42);'
+docker stop course-pg
+docker rm course-pg
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Повторите команду \cmd{docker run} с тем же томом и снова выполните проверку через \cmd{pg_isready}. После сообщения о готовности прочитайте сохранённую запись:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker exec course-pg psql -U postgres -c 'SELECT * FROM demo;'
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Результат запроса должен содержать ранее сохранённое значение 42. Это подтверждает, что данные базы сохранились в томе независимо от пересоздания контейнера.
+
+При повторном подключении тома важно учитывать, что переменные инициализации образа PostgreSQL применяются только при создании новой базы в пустом каталоге данных. Поэтому изменение этих переменных не меняет пароль пользователя уже существующей базы.
+
+После эксперимента удалите контейнер и созданные для этой главы тома. Вместе с томом удаляется база.
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker stop course-pg
+docker rm course-pg
+docker volume rm course-pgdata course-data
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\begin{samepage}
 \section{Типичные ошибки}
-\begin{itemize}
-  \item Данные «пропали» после \cmd{docker rm} --- не
-    подключён том;
-  \item Bind mount на каталог, которого нет на хосте ---
-    Docker создаст его \emph{пустым};
-  \item Права: приложение в контейнере работает от
-    \cmd{root}, а на хосте каталог принадлежит вам ---
-    возможны конфликты прав.
+\begin{itemize}[nosep]
+  \item Данные исчезли при пересоздании: проверьте подключённый том в выводе \cmd{docker inspect}.
+  \item Файлы образа недоступны: проверьте, не скрывает ли их подключённое хранилище.
+  \item Отказ в записи: проверьте UID, GID, права и признак доступа только для чтения.
+  \item Том не удаляется: проверьте, не ссылается ли на него существующий контейнер.
 \end{itemize}
 
 \section{Связь с остальным курсом}
 
-Тома используются в \cmd{docker-compose}
-(\nameref{ch:22-docker-compose}); ограничения на
-ресурсы контейнеров --- \nameref{ch:23-docker-resources};
-файловая система хоста --- \nameref{ch:04-filesystem}.
+Права доступа рассмотрены в главе «\nameref*{ch:05-permissions}», а устройство файловой системы в главе «\nameref*{ch:04-filesystem}». В следующей главе тома будут описаны в общей конфигурации приложения.
 
 \section{Задачи для самопроверки}
-\begin{enumerate}
-  \item Почему данные в контейнере теряются после
-    его удаления?
-  \item Чем named volume отличается от bind mount?
-  \item Как подключить том к контейнеру?
-  \item Что такое tmpfs и когда его используют?
-  \item Как сохранить данные PostgreSQL при удалении
-    контейнера?
+\begin{enumerate}[nosep]
+  \item Почему файл в слое контейнера сохраняется после остановки, но не после удаления?
+  \item Чем том отличается от привязки каталога?
+  \item Что произойдёт при монтировании пустого тома или привязке поверх непустого каталога?
+  \item Когда следует использовать \cmd{tmpfs}?
+  \item Проверьте сохранение записи PostgreSQL после пересоздания контейнера.
+  \item Что происходит при изменении файла из нижнего слоя OverlayFS?
+  \item Чем именованный том отличается от анонимного?
+  \item Как различается поведение \cmd{-v} и \cmd{--mount} при отсутствии источника привязки?
+  \item Для чего используют режим только для чтения и почему важны UID и GID?
+  \item Почему использование подкачки имеет значение для \cmd{tmpfs}?
 \end{enumerate}
+\end{samepage}
+\par
+\clearpage
+\endgroup

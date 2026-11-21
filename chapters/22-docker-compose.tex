@@ -1,115 +1,234 @@
-% Глава: 22-docker-compose
-% Статус: наполнено (первый прогон).
 \chapter{Docker Compose}
 \label{ch:22-docker-compose}
+\begingroup
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.25cm}
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\makeatletter
+\let\@afterindentfalse\@afterindenttrue
+\@afterindenttrue
+\makeatother
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\raggedbottom
+\titlespacing{\section}{0pt}{1.9ex plus .3ex minus .2ex}{.9ex}
+\titlespacing{\subsection}{0pt}{1.8ex plus .3ex minus .2ex}{.9ex}
+\captionsetup[figure]{font=footnotesize,justification=centering,singlelinecheck=false}
+\fvset{breaksymbolleft={},breaksymbolright={}}
 
-\section{Зачем Compose}
+\section{Назначение}
 
-Когда приложение --- это несколько контейнеров
-(веб, база данных, очередь), описывать их
-отдельными \cmd{docker run} неудобно.
-\textbf{Docker Compose} описывает всю систему в одном
-YAML-файле и запускает её одной командой.
+Если приложение состоит из нескольких взаимодействующих контейнеров, управлять ими отдельными командами неудобно. Docker Compose позволяет описать такое приложение в одном файле YAML, указав его сервисы, образы, сети и хранилища. Такой подход называют декларативным: пользователь задаёт требуемое состояние приложения, а Compose создаёт и запускает соответствующие контейнеры. В учебном примере все сервисы работают на одной ВМ. Compose управляет приложением на одном Docker Engine и не заменяет кластерный оркестратор.
 
-Оркеструем такие системы на своей ВМ: Compose поднимает
-все контейнеры на \fpath{pglab.nsu.ru} одной командой.
+В современных версиях используется команда \cmd{docker compose}. Прежняя отдельная программа запускалась командой \cmd{docker-compose}. Перед выполнением примера проверьте наличие Compose: \cmd{docker compose version}.
 
-\section{Анатомия \fpath{docker-compose.yml}}
+\section{Конфигурация}
 
-\begin{minted}[bgcolor=gray!6]{bash}
+Описание приложения обычно помещают в файл \file{compose.yaml}. Для совместимости поддерживается и прежнее имя \file{docker-compose.yml}. В данном файле вложенность элементов YAML задаётся отступами из пробелов, а устаревшее поле \cmd{version} указывать не требуется. Основные элементы конфигурации приведены в таблице.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering
+\begin{tabular}{@{}lp{.66\linewidth}@{}}
+\toprule
+\textbf{Поле} & \textbf{Назначение} \\
+\midrule
+\cmd{services} & Описания сервисов \\
+\cmd{image} & Образ для запуска \\
+\cmd{build} & Контекст и настройки сборки \\
+\cmd{ports} & Публикация портов контейнера на хосте \\
+\cmd{volumes} & Монтирование хранилищ \\
+\cmd{environment} & Переменные окружения \\
+\cmd{depends_on} & Зависимости между сервисами \\
+\cmd{healthcheck} & Проверка состояния приложения \\
+\cmd{networks} & Подключение к сетям \\
+\cmd{command} & Замена команды по умолчанию \\
+\bottomrule
+\end{tabular}
+\end{minipage}\par\addvspace{10pt}
+
+\section{Практика: веб-приложение и база данных}
+
+Рассмотрим приложение из двух сервисов: веб-сервера и базы данных PostgreSQL. При получении HTTP-запроса GET веб-сервер обращается к базе и возвращает результат запроса \cmd{SELECT 42}. Для выполнения упражнения знание Python не требуется. Создайте каталог \file{course-compose} и разместите в нём три приведённых ниже файла.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{app.py}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{python}
+import os
+from contextlib import closing
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import psycopg2
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            with closing(psycopg2.connect(
+                host="db", dbname="postgres", user="postgres",
+                password=os.environ["DB_PASSWORD"],
+                connect_timeout=3,
+                options="-c statement_timeout=3000"
+            )) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 42")
+                    value = cur.fetchone()[0]
+        except psycopg2.Error:
+            self.send_error(503)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(f"{value}\n".encode())
+
+HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{Dockerfile}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{Dockerfile}
+FROM debian:12-slim
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends python3 python3-psycopg2 && rm -rf \
+    /var/lib/apt/lists/*
+WORKDIR /app
+COPY app.py .
+USER 65534:65534
+EXPOSE 8000
+CMD ["python3", "app.py"]
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{compose.yaml}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{yaml}
 services:
   web:
     build: .
     ports:
-      - "8080:80"
-    depends_on:
-      - db
+      - "127.0.0.1:8080:8000"
     environment:
-      - DATABASE_URL=postgres://db:5432
+      DB_PASSWORD: ${DB_PASSWORD:?set_DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set_DB_PASSWORD}
     volumes:
       - dbdata:/var/lib/postgresql/data
-    environment:
-      POSTGRES_PASSWORD: secret
-
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1",
+             "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 volumes:
   dbdata:
 \end{minted}
+\end{minipage}\par\addvspace{10pt}
 
-Ключевые поля:
-\begin{center}
-\begin{tabular}{lp{0.62\linewidth}}
+Чтобы оба сервиса использовали один пароль, его значение передаётся из переменной окружения оболочки. Выражение с \cmd{:?} требует, чтобы при подстановке переменная была задана и не была пустой. Поскольку переменные окружения контейнера доступны через \cmd{docker inspect}, в примере используется только учебный пароль.
+
+Приложение предназначено для локальной демонстрации, а не для эксплуатации в рабочей среде. По этой причине достаточно встроенного модуля Python \cmd{http.server}.
+
+\section{Сеть и готовность сервисов}
+
+Для взаимодействия сервисов Compose по умолчанию создаёт общую сеть проекта (рис.~\ref*{fig:compose-network}). Благодаря встроенному разрешению имён веб-приложение может обращаться к базе данных по имени сервиса \cmd{db} и порту 5432, не зная IP-адреса контейнера. Порт базы не требуется публиковать на ВМ. Порт 8000 веб-приложения доступен через опубликованный порт 8080 на петлевом интерфейсе ВМ (см. ограничения версий Docker Engine в главе «\nameref*{ch:19-docker-basics}»).
+
+\begin{figure}[!htb]
+  \centering
+  \begin{tikzpicture}[node distance=9mm]
+    \node[ext] (user) {Клиент\\на ВМ};
+    \node[process,right=of user] (web) {Сервис web\\порт 8000};
+    \node[process,right=of web] (db) {Сервис db\\порт 5432};
+    \node[storage,below=of db] (vol) {Том dbdata};
+    \node[layer,fit=(web)(db),inner sep=4pt] (net) {};
+    \node[above=2mm of net,font=\small] {Сеть проекта Compose};
+    \draw[flow] (user) -- node[above,font=\scriptsize]{8080} (web);
+    \draw[flow] (web) -- node[above,font=\scriptsize]{SQL} (db);
+    \draw[bidir] (db) -- (vol);
+  \end{tikzpicture}
+  \caption{Внешний HTTP-запрос и внутреннее соединение с базой.}
+  \label{fig:compose-network}
+\end{figure}
+
+Наличие общей сети не гарантирует, что база данных уже готова принимать запросы к моменту запуска веб-приложения. Параметр \cmd{depends_on} в краткой форме задаёт порядок запуска сервисов, но не проверяет их готовность. В данном примере параметр \cmd{healthcheck} проверяет, принимает ли PostgreSQL соединения по TCP. Благодаря условию \cmd{service_healthy} веб-сервис запускается только после успешной проверки. Однако готовность принимать соединения ещё не означает успешную аутентификацию и выполнение SQL-запроса: их проверку выполняет само приложение при получении HTTP-запроса. Если возникает ошибка PostgreSQL, приложение возвращает код HTTP 503 и повторяет попытку подключения при следующем запросе.
+
+\section{Запуск и управление}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Из каталога проекта выполните команды на ВМ с доступом к Docker и репозиториям пакетов:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+export DB_PASSWORD=course-demo
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+curl --fail --retry 5 --retry-all-errors http://127.0.0.1:8080/
+docker compose logs web
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+В теле HTTP-ответа должно быть число 42. Если порт 8080 занят, измените порт хоста в поле \cmd{ports} и в команде \cmd{curl}. Для управления приложением применяют следующие подкоманды \cmd{docker compose}:
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering
+\small
+\begin{tabular}{@{}p{.29\linewidth}>{\raggedright\arraybackslash}p{.65\linewidth}@{}}
 \toprule
-\textbf{Поле} & \textbf{Назначение} \\
+\textbf{Команда Compose} & \textbf{Назначение} \\
 \midrule
-\cmd{services}      & словарь сервисов (контейнеров) \\
-\cmd{image}         & готовый образ \\
-\cmd{build}         & собрать из Dockerfile (путь) \\
-\cmd{ports}         & проброс портов (host:container) \\
-\cmd{volumes}       & тома (именованные или bind mount) \\
-\cmd{environment}   & переменные окружения \\
-\cmd{depends\_on}   & порядок запуска (запустит сначала) \\
-\cmd{networks}      & пользовательские сети \\
-\cmd{command}       & переопределить CMD образа \\
+\cmd{up -d} & Создать или обновить сервисы и запустить в фоне. При изменении образа или конфигурации пересоздать соответствующие контейнеры \\
+\cmd{up -d --build} & Выполнить сборку перед запуском, например после изменения исходного кода \\
+\cmd{ps -a} & Показать состояние контейнеров проекта \\
+\cmd{logs web} & Посмотреть журналы сервиса web \\
+\cmd{exec web sh} & Запустить оболочку в работающем сервисе \\
+\cmd{stop} & Остановить контейнеры без удаления \\
+\cmd{down} & Остановить и удалить контейнеры и сети проекта, сохранив тома \\
+\cmd{down -v} & Удалить также объявленные именованные и связанные анонимные тома. Внешние тома не удаляются \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{minipage}\par\addvspace{10pt}
 
-\section{Основные команды}
-
-\begin{minted}[bgcolor=gray!6]{bash}
-docker compose up            # собрать при необходимости и запустить все сервисы
-docker compose up -d         # запустить в фоне
-docker compose ps            # список работающих сервисов
-docker compose logs web      # логи сервиса "web"
-docker compose exec web bash # открыть оболочку в сервисе "web"
-docker compose stop          # остановить все
-docker compose down          # остановить и удалить контейнеры
-docker compose down -v       # также удалить тома, осторожно!
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}По завершении работы остановите приложение с сохранением базы данных и удалите учебный пароль из окружения оболочки:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker compose down
+unset DB_PASSWORD
 \end{minted}
+\end{minipage}\par\addvspace{10pt}
 
-\section{Сети и DNS}
-
-Компоненты в одном compose-файле автоматически
-попадают в одну сеть; имя сервиса --- его DNS-имя:
-веб обращается к базе как \cmd{db} (не \cmd{localhost}).
+Конфигурация Compose сохраняет описание приложения независимо от состояния контейнеров. Для повторного запуска достаточно снова задать учебный пароль и применить тот же файл конфигурации. При повторном использовании тома пароль должен совпадать с установленным при инициализации базы.
 
 \section{Типичные ошибки}
-\begin{itemize}
-  \item \cmd{depends\_on} --- только про
-    \emph{запуск}, не про \emph{готовность}: база может
-    ещё не быть готова принимать подключения, когда
-    стартует веб; используйте \cmd{healthcheck} или
-    retry в коде;
-  \item Порт занят на хосте --- \cmd{docker compose ps}
-    покажет; смените host-порт в \cmd{ports};
-  \item \cmd{docker compose down -v} удаляет тома и
-    данные --- используйте с осторожностью
-    (\nameref{ch:21-docker-data});
-  \item Несовместимые версии \cmd{compose} и
-    \cmd{docker} --- обновите инструмент.
+\begin{itemize}[nosep]
+  \item Ошибка YAML: проверьте отступы и выполните \cmd{docker compose config --quiet}.
+  \item Нет соединения с базой: проверьте имя сервиса, состояние, журнал \cmd{docker compose logs db} и пароль.
+  \item Изменили пароль, но база не принимает его: данные прежней базы уже находятся в томе. Смена переменной не изменяет пароль существующего пользователя.
+  \item Порт занят: проверьте слушающие порты ВМ через \cmd{ss -ltn} и измените опубликованный порт.
+  \item После изменения кода остался прежний результат: пересоберите образ и проверьте состояние проекта.
 \end{itemize}
 
+\par\begin{samepage}
 \section{Связь с остальным курсом}
 
-Compose комбинирует Dockerfile
-(\nameref{ch:20-dockerfile}) и тома
-(\nameref{ch:21-docker-data}); ограничения ресурсов
-для каждого сервиса --- \nameref{ch:23-docker-resources};
-запуск нескольких контейнеров на хосте ---
-\nameref{ch:19-docker-basics}.
+Compose объединяет сборку образа (глава \nameref*{ch:20-dockerfile}), хранение данных (глава \nameref*{ch:21-docker-data}) и сетевое взаимодействие процессов (глава \nameref*{ch:18-ipc}). Ограничения ресурсов рассмотрены в следующей главе.\par
 
 \section{Задачи для самопроверки}
-\begin{enumerate}
-  \item Чем Compose удобнее, чем несколько
-    \cmd{docker run}?
-  \item Какие ключевые поля у сервиса в
-    \fpath{docker-compose.yml}?
-  \item Как запустить систему в фоне и посмотреть
-    логи одного сервиса?
-  \item Чем \cmd{depends\_on} не гарантирует
-    (и что нужно добавить)?
-  \item Как сервисам обращаться друг к другу по
-    имени?
+\begin{enumerate}[nosep]
+  \item Объясните назначение полей \cmd{build}, \cmd{image} и \cmd{volumes}.
+  \item Запустите приложение и получите ответ 42. Измените число в SQL-запросе и пересоберите образ.
+  \item Почему веб-приложение обращается к \cmd{db}, а не к \cmd{localhost}?
+  \item Как связаны \cmd{healthcheck} и \cmd{depends_on}?
+  \item Чем различаются \cmd{stop}, \cmd{down} и \cmd{down -v}?
+  \item Какую задачу решает Docker Compose и почему его конфигурацию называют декларативной?
+  \item Как в YAML задаётся вложенность элементов?
+  \item Как значение \cmd{DB_PASSWORD} попадает в конфигурацию сервисов?
+  \item Почему не требуется публиковать порт базы данных?
+  \item Почему смена переменной пароля не меняет пароль ранее созданной базы?
 \end{enumerate}
+\end{samepage}
+\par
+\clearpage
+\endgroup
