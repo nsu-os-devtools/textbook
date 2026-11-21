@@ -57,8 +57,11 @@
 % Чёрная рамка на всю ширину текста + перенос длинных строк (breaklines),
 % чтобы код не выходил за рамку. Серый фон задаётся на каждом блоке опцией
 % bgcolor --- это обёртка minted (цветной \colorbox).
+% breakanywhere: разрешает перенос ВНУТРИ длинного токена (URL, длинная
+% команда без пробелов) --- иначе такая строка вылезает за рамку на
+% несколько сантиметров.
 \fvset{frame=single, framerule=0.4pt, framesep=5pt, rulecolor=\color{black},
-      breaklines=true}
+      breaklines=true, breakanywhere=true}
 
 % Единые стили для TikZ — подключаем отдельно (легко править).
 \IfFileExists{style/tikz-styles.tex}{\input{style/tikz-styles}}{}
