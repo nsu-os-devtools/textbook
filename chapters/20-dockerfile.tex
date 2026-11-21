@@ -1,144 +1,202 @@
-% Глава: 20-dockerfile
-% Статус: наполнено (первый прогон).
 \chapter{Dockerfile}
 \label{ch:20-dockerfile}
+\begingroup
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.25cm}
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\makeatletter
+\let\@afterindentfalse\@afterindenttrue
+\@afterindenttrue
+\makeatother
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\raggedbottom
+\titlespacing{\section}{0pt}{1.5ex plus .3ex minus .2ex}{.75ex}
+\titlespacing{\subsection}{0pt}{1.8ex plus .3ex minus .2ex}{.9ex}
+\captionsetup[figure]{font=footnotesize,justification=centering,singlelinecheck=false}
+\fvset{breaksymbolleft={},breaksymbolright={}}
 
-\section{Что такое Dockerfile}
+\section{Сборка образа}
 
-\textbf{Dockerfile} --- текст с инструкциями, как
-построить образ. Команда \cmd{docker build} выполняет
-инструкции по порядку, каждая --- отдельный
-\textbf{слой}.
+Dockerfile задаёт инструкции сборки образа и параметры запуска контейнера. В современных версиях Docker Engine сборку Linux-образов по умолчанию выполняет BuildKit (рис.~\ref*{fig:docker-build}). Последний аргумент команды \cmd{docker build} задаёт контекст сборки, из которого \cmd{COPY} получает локальные файлы. Точка (\cmd{.}) обозначает текущий каталог.
 
-Собираем образы на своей ВМ: \cmd{docker build} запускается на
-\fpath{pglab.nsu.ru} и кэширует слои на её диске.
-
-\begin{minted}[bgcolor=gray!6]{Dockerfile}
-# базовый образ
-FROM ubuntu:22.04
-
-# метаданные
-LABEL maintainer="dev@example.org"
-
-# рабочий каталог внутри контейнера
-WORKDIR /app
-
-# установить инструменты; каждый RUN создаёт отдельный слой
-RUN apt-get update && apt-get install -y --no-install-recommends gcc make
-RUN rm -rf /var/lib/apt/lists/*
-
-# скопировать файлы проекта
-COPY src/ ./src/
-
-# собрать программу
-RUN make
-
-# точка входа
-CMD ["./app"]
-\end{minted}
+\begin{figure}[!htb]
+  \centering
+  \begin{tikzpicture}[node distance=7mm]
+    \node[ext] (df) {Dockerfile};
+    \node[ext,below=of df] (ctx) {Контекст\\сборки};
+    \node[process,right=12mm of df,yshift=-7mm] (bk) {BuildKit};
+    \node[storage,right=of bk] (im) {Образ};
+    \node[process,right=of im] (ct) {Контейнер};
+    \draw[flow] (df) -- (bk);
+    \draw[flow] (ctx) -- (bk);
+    \draw[flow] (bk) -- (im);
+    \draw[flow] (im) -- node[above,font=\scriptsize]{\cmd{run}} (ct);
+  \end{tikzpicture}
+  \caption{Сборка образа и создание контейнера.}
+  \label{fig:docker-build}
+\end{figure}
 
 \section{Основные инструкции}
 
-\begin{center}
-\begin{tabular}{lp{0.62\linewidth}}
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering
+\small
+\begin{tabular}{@{}lp{.72\linewidth}@{}}
 \toprule
 \textbf{Инструкция} & \textbf{Назначение} \\
 \midrule
-\cmd{FROM}     & базовый образ; начинается с него сборка \\
-\cmd{WORKDIR}  & каталог по умолчанию внутри контейнера \\
-\cmd{RUN}      & выполнить команду при сборке (создаёт слой) \\
-\cmd{COPY}     & скопировать файлы из контекста сборки \\
-\cmd{ADD}      & как COPY + распаковка архивов и загрузка по URL \\
-\cmd{ENV}      & задать переменную окружения в образе \\
-\cmd{ARG}      & параметр, передаваемый при \cmd{docker build} \\
-\cmd{LABEL}    & метаданные образа \\
-\cmd{EXPOSE}   & документация о портах (не пробрасывает!) \\
-\cmd{ENTRYPOINT} & фиксированная команда контейнера \\
-\cmd{CMD}      & аргументы по умолчанию для ENTRYPOINT \\
-\cmd{USER}     & пользователь, от которого работает контейнер \\
+\cmd{FROM} & Выбор базового образа и начало этапа сборки \\
+\cmd{WORKDIR} & Рабочий каталог последующих инструкций и запуска \\
+\cmd{RUN} & Выполнение команды при сборке \\
+\cmd{COPY} & Копирование файлов из контекста или другого этапа \\
+\cmd{ADD} & Копирование с дополнительными возможностями \\
+\cmd{ARG} & Параметр сборки \\
+\cmd{ENV} & Переменная окружения для сборки и запуска \\
+\cmd{LABEL} & Метаданные образа \\
+\cmd{USER} & Пользователь для последующих команд и запуска \\
+\cmd{EXPOSE} & Описание порта приложения без публикации \\
+\cmd{ENTRYPOINT} & Основная команда запуска контейнера \\
+\cmd{CMD} & Команда или аргументы по умолчанию \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{minipage}\par\addvspace{10pt}
 
-\textbf{CMD} vs \textbf{ENTRYPOINT}: \cmd{CMD} легко
-переопределить аргументами запуска; \cmd{ENTRYPOINT} ---
-``главная'' команда, аргументы передаются ей.
+Если необходимо только скопировать файлы из контекста сборки, используют \cmd{COPY}. Инструкция \cmd{ADD} дополнительно поддерживает автоматическую распаковку локальных архивов tar и загрузку удалённых файлов.
+
+При настройке приложения следует учитывать, что значения \cmd{ARG} и \cmd{ENV} могут сохраняться в метаданных образа или истории сборки, поэтому для передачи секретов следует использовать специальные возможности BuildKit, например \cmd{RUN --mount=type=secret}.
+
+\section{Команда запуска}
+
+Инструкции \cmd{RUN}, \cmd{CMD} и \cmd{ENTRYPOINT} различаются назначением и поддерживают две формы записи: через оболочку и в виде массива JSON. Например, в Linux команда \cmd{RUN make} по умолчанию выполняется через \cmd{/bin/sh -c}, тогда как \cmd{RUN ["make"]} запускает программу непосредственно. Во втором случае подстановки оболочки недоступны без её явного запуска.
+
+Инструкция \cmd{RUN} выполняется при сборке образа, а \cmd{CMD} и \cmd{ENTRYPOINT} определяют поведение контейнера при запуске. Если обе инструкции записаны в форме JSON, \cmd{ENTRYPOINT} задаёт основную команду, а \cmd{CMD} её аргументы по умолчанию.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Например:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{Dockerfile}
+FROM debian:12-slim
+ENTRYPOINT ["/bin/echo"]
+CMD ["hello"]
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+При запуске без дополнительных аргументов контейнер выведет \cmd{hello}. Аргументы, указанные после имени образа в команде \cmd{docker run}, заменяют \cmd{CMD}. Параметр \cmd{--entrypoint} позволяет изменить саму точку входа. Форма непосредственного запуска не создаёт дополнительную оболочку, которая могла бы помешать доставке сигналов основному приложению.
 
 \section{Слои и кэш}
 
-Каждая инструкция создаёт слой. Docker кэширует
-слои: если строки выше не менялись, их слои берутся
-из кэша, и сборка идёт быстро. Поэтому
-\textbf{порядок инструкций важен}:
-\begin{itemize}
-  \item сначала то, что редко меняется (зависимости);
-  \item потом то, что часто (исходный код);
-  \item так при изменении кода пересобирается только
-    верхний слой.
-\end{itemize}
+Образ состоит из слоёв файловой системы и метаданных. Инструкции \cmd{RUN} и \cmd{COPY} могут создавать новые слои, тогда как \cmd{CMD} и \cmd{LABEL} изменяют только метаданные.
 
-\section{\cmd{COPY} и \cmd{ADD}}
+BuildKit повторно использует сохранённые результаты операций, если их входные данные не изменились. При изменении содержимого копируемого файла результат соответствующей операции и зависимых от неё операций необходимо получить заново. Изменение содержимого удалённого репозитория пакетов само по себе не приводит к сбросу кэша \cmd{RUN}. Поэтому зависимости устанавливают до копирования часто изменяемого исходного кода, а обновление списка пакетов и их установку выполняют в одной инструкции \cmd{RUN}.
 
-\cmd{COPY} --- скопировать файл из каталога сборки.
-\cmd{ADD} делает то же, но дополнительно распаковывает
-архивы и может загрузить файл по URL. Для обычного
-копаирования файлов проекта используйте \cmd{COPY}.
+Порядок инструкций влияет не только на скорость сборки, но и на размер образа. Если временные файлы создаются и удаляются в одной инструкции \cmd{RUN}, они не попадают в итоговый слой этой операции. Удаление файлов в следующем слое скрывает их из файловой системы образа, но они продолжают занимать место в предыдущем слое.
 
-\section{Многоступенчатая сборка (multi-stage)}
+\section{Практика: многоступенчатая сборка}
 
-Один Dockerfile может содержать несколько
-\cmd{FROM}:
-\begin{minted}[bgcolor=gray!6]{Dockerfile}
-FROM golang:1.21 AS build
-WORKDIR /src
-COPY . .
-RUN go build -o app .
+Многоступенчатая сборка позволяет разделить среду компиляции программы и среду её выполнения. Рассмотрим данный подход на примере программы на C. Создайте пустой каталог \file{course-build} и разместите в нём три файла.
 
-FROM alpine:3.18
-COPY --from=build /src/app /app
-ENTRYPOINT ["/app"]
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{main.c}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{c}
+#include <stdio.h>
+
+int main(void) {
+    puts("answer: 42");
+    return 0;
+}
 \end{minted}
+\end{minipage}\par\addvspace{10pt}
 
-Первый слой --- «сборочный» (с компилятором), второй ---
-лёгкий, только с готовым бинарником. Размер
-конечного образа резко меньше.
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{Makefile}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{Makefile}
+CC = gcc
+CFLAGS = -Wall -Wextra -O2
+app: main.c
+    $(CC) $(CFLAGS) -o app main.c
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{Dockerfile}:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{Dockerfile}
+FROM debian:12-slim AS build
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends gcc make libc6-dev && rm -rf \
+    /var/lib/apt/lists/*
+WORKDIR /src
+COPY main.c Makefile ./
+RUN make
 
-\section{\cmd{.dockerignore}}
+FROM debian:12-slim
+COPY --from=build /src/app /usr/local/bin/app
+USER 65534:65534
+CMD ["/usr/local/bin/app"]
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
 
-Файл \fpath{.dockerignore} рядом с Dockerfile
-определяет, что \emph{не} копировать в контекст
-сборки (.git, локальные логи, артефакты).
-Уменьшает размер и время сборки.
+\par\pagebreak[4]
+На первом этапе устанавливаются инструменты компиляции и создаётся исполняемый файл. На второй этап переносится только собранная программа, поэтому компилятор и промежуточные файлы не входят в конечный образ. Для запуска динамически скомпонованной программы необходимы совместимые загрузчик и библиотеки. Использование одной базовой системы на обоих этапах упрощает соблюдение этого условия.
 
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Из каталога с файлами выполните:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker build -t course-c:1.0 .
+docker run --rm course-c:1.0
+docker image history course-c:1.0
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+При запуске программа должна вывести \cmd{answer: 42}. Чтобы проследить работу кэша, измените строку в \file{main.c}, повторите сборку и проверьте вывод. При неизменных зависимостях BuildKit может повторно использовать результаты предыдущих операций.
+
+Для сборки необходим доступ к репозиториям образов и пакетов. Поскольку тег базового образа может быть переназначен, а версии пакетов не зафиксированы, побайтовая воспроизводимость не гарантируется. После работы удалите учебный образ:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker image rm course-c:1.0
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\section{Файл .dockerignore}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Файл \file{.dockerignore} находится в корне контекста сборки и исключает из него ненужные файлы. Для данного примера достаточно:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{text}
+.git
+*.o
+app
+.env
+\end{minted}
+\end{minipage}\par\nobreak\addvspace{10pt}\nobreak
+
+В результате служебные файлы и результаты локальной компиляции не попадут в контекст сборки, что уменьшит его объём.
+
+\par\pagebreak[4]
 \section{Типичные ошибки}
-\begin{itemize}
-  \item \cmd{RUN apt-get update} и \cmd{apt-get install}
-    в разных \cmd{RUN} --- кэш не поможет; объедините
-    в одну инструкцию;
-  \item Забыли \cmd{WORKDIR} --- файлы копировались в
-    \fpath{/} вместо нужного каталога;
-  \item Образ «огромный» --- кэш пакетного менеджера не
-    чистится после установки (см.\ пример с \cmd{rm -rf}
-    выше), либо не используется multi-stage;
-  \item \cmd{EXPOSE} «не работает» --- он не пробрасует
-    порт; нужен \cmd{-p} при \cmd{docker run}.
+\begin{itemize}[nosep]
+  \item \cmd{COPY} не находит файл: проверьте контекст сборки и \file{.dockerignore}.
+  \item \cmd{make} не находит цель: проверьте наличие Makefile, рабочий каталог и табуляцию.
+  \item Образ слишком велик: перенесите инструменты сборки в отдельный этап, удаляйте временные данные в той же инструкции.
+  \item Программа не запускается: проверьте архитектуру, права и наличие динамических библиотек в конечном образе.
+  \item Изменение портов через \cmd{EXPOSE} не открыло доступ: опубликуйте нужный порт при запуске.
 \end{itemize}
 
 \section{Связь с остальным курсом}
 
-Dockerfile --- описание образа; хранение данных ---
-\nameref{ch:21-docker-data}; несколько контейнеров ---
-\nameref{ch:22-docker-compose}; сборка C-проекта внутри
-образа --- \nameref{ch:13-c-compilation} и
-\nameref{ch:14-make}.
+Сборка опирается на главы \nameref*{ch:13-c-compilation} и \nameref*{ch:14-make}. Применение образов рассмотрено в главе \nameref*{ch:22-docker-compose}.
 
 \section{Задачи для самопроверки}
-\begin{enumerate}
-  \item Чем \cmd{COPY} отличается от \cmd{ADD}?
-  \item Что такое слой и почему порядок инструкций
-    важен?
-  \item Чем \cmd{CMD} отличается от \cmd{ENTRYPOINT}?
-  \item Как сделать образ «меньше», используя
-    multi-stage?
-  \item Зачем нужен \cmd{.dockerignore}?
+\begin{enumerate}[nosep]
+  \item Что задаёт контекст сборки? Для чего нужен \file{.dockerignore}?
+  \item Чем \cmd{RUN} отличается от \cmd{CMD} и \cmd{ENTRYPOINT}?
+  \item Почему удаление файла в следующем слое не уменьшает предыдущий слой?
+  \item Соберите пример и измените исходный код. Какие операции используют кэш?
+  \item Зачем нужен второй этап сборки и почему важна совместимость библиотек?
+  \item Чем отличается запуск через оболочку от формы JSON?
+  \item В каких случаях выбирают \cmd{COPY}, а в каких \cmd{ADD}?
+  \item Почему значения \cmd{ARG} и \cmd{ENV} не подходят для передачи секретов?
+  \item Что задаёт инструкция \cmd{USER}?
+  \item Чем инструкция \cmd{EXPOSE} отличается от публикации порта?
 \end{enumerate}
+\par
+\clearpage
+\endgroup

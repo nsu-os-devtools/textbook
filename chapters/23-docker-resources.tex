@@ -1,96 +1,211 @@
-% Глава: 23-docker-resources
-% Статус: наполнено (первый прогон).
 \chapter{Ресурсы контейнеров}
 \label{ch:23-docker-resources}
+\begingroup
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.25cm}
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\makeatletter
+\let\@afterindentfalse\@afterindenttrue
+\@afterindenttrue
+\makeatother
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\raggedbottom
+\titlespacing{\section}{0pt}{1.9ex plus .3ex minus .2ex}{.9ex}
+\titlespacing{\subsection}{0pt}{1.8ex plus .3ex minus .2ex}{.9ex}
+\captionsetup[figure]{font=footnotesize,justification=centering,singlelinecheck=false}
+\fvset{breaksymbolleft={},breaksymbolright={}}
 
-\section{Изоляция ресурсов: cgroups}
+\section{Контрольные группы Linux}
 
-Контейнеры делят ядро хоста; чтобы один «не съел»
-всё, Linux использует \textbf{cgroups} (control
-groups) --- механизм ядра, ограничивающий ресурсы
-(память, CPU, IO) для группы процессов. Docker
-управляет cgroups за вас через флаги.
+Пространства имён обеспечивают изоляцию, определяя, какие объекты операционной системы видит процесс. Однако они не ограничивают объём потребляемых ресурсов. Для учёта, распределения и ограничения ресурсов групп процессов ядро использует контрольные группы (cgroups). Docker использует соответствующие контроллеры ядра для управления ресурсами контейнеров (рис.~\ref*{fig:cgroups}).
 
-Лимиты задают долю ресурсов вашей ВМ на \fpath{pglab.nsu.ru},
-чтобы один контейнер не забрал всё у соседних.
+Управление ресурсами имеет иерархический характер: в cgroups v2 контроллеры работают в едином дереве, а ограничения вышестоящих групп распространяются на потомков. Поэтому заданный контейнеру лимит не отменяет ограничений родительской группы и не увеличивает доступные ресурсы ВМ. В системах с cgroups v1 используются другие интерфейсы управления.
 
-\section{Лимиты CPU}
-
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run --cpus 1.5 myimage          # ограничить 1.5 ядрами
-docker run --cpuset-cpus 0,1 myimage   # закрепить за конкретными CPU
-\end{minted}
-
-\cmd{--cpus} задаёт долю (дробное число допустимо),
-\cmd{--cpuset-cpus} --- список конкретных ядер.
-
-\section{Лимиты памяти}
-
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run --memory 512m myimage          # максимум 512 МиБ
-docker run --memory 512m --memory-swap 1g myimage  # + подкачка (swap)
-\end{minted}
-
-Если процесс превысит лимит памяти, ядро сработает
-\textbf{OOM-killer} и завершит процесс с ошибкой
-(\cmd{Killed}). Проверьте логи:
-\cmd{docker inspect} покажет \cmd{OOMKilled: true}.
-
-\section{Мониторинг}
-
-\begin{minted}[bgcolor=gray!6]{bash}
-docker stats             # живая статистика CPU и памяти по контейнерам
-docker stats --no-stream # однократно
-docker top <id>          # процессы внутри контейнера
-docker inspect <id>      # полная конфигурация и лимиты
-\end{minted}
-
-\section{Типовая схема ограничений}
-
-\begin{figure}[htb]
+\begin{figure}[!htb]
   \centering
-  \begin{tikzpicture}[node distance=1.3cm]
-    \node[layer, minimum width=7cm, minimum height=2.8cm] (host) {};
-    \node[font=\small] at (host) {хост: CPU + RAM};
-    \node[process, minimum width=1.6cm] (c1) at ([yshift=-0.4cm]host.west) [xshift=0.9cm] {app 1};
-    \node[process, right=0.3cm of c1, minimum width=1.6cm] (c2) {app 2};
-    \node[font=\tiny, below=1pt of c1] {cpus=1.0, mem=512m};
-    \node[font=\tiny, below=1pt of c2] {cpus=0.5, mem=256m};
+  \begin{tikzpicture}[node distance=8mm]
+    \node[ext,minimum width=104mm] (h) {Ресурсы ВМ: процессор, память};
+    \node[io,below=of h,minimum width=65mm] (g) {Контроллеры cgroups};
+    \node[process,below=of g,xshift=-31mm,minimum width=54mm] (a) {Группа A\\50 мс из 100 мс\\Память: 128 МиБ};
+    \node[process,below=of g,xshift=31mm,minimum width=54mm] (b) {Группа B\\100 мс из 100 мс\\Память: 256 МиБ};
+    \draw[flow] (h) -- (g);
+    \draw[flow] (g.south) -- (a.north);
+    \draw[flow] (g.south) -- (b.north);
   \end{tikzpicture}
-  \caption{Каждый контейнер имеет лимиты CPU и памяти (cgroups).}
+  \caption{Пример квот процессорного времени и пределов памяти для двух групп.}
   \label{fig:cgroups}
 \end{figure}
 
+\section{Процессорное время}
+
+Docker позволяет ограничивать процессорное время, выбирать логические процессоры и задавать относительный вес при конкуренции за ресурсы:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{.31\linewidth}>{\raggedright\arraybackslash}p{.63\linewidth}@{}}
+\toprule
+\textbf{Параметр} & \textbf{Назначение} \\
+\midrule
+\cmd{--cpus 0.5} & Ограничить суммарное процессорное время до половины времени одного логического процессора \\
+\cmd{--cpuset-cpus 0,1} & Разрешить выполнение на указанных логических процессорах, если они доступны родительской группе \\
+\cmd{--cpu-shares} & Задать относительный вес при конкуренции за процессорное время \\
+\bottomrule
+\end{tabular}
+\end{minipage}\par\addvspace{10pt}
+
+При стандартном периоде 100~мс квота \cmd{--cpus 0.5} позволяет группе использовать до 50~мс суммарного процессорного времени за период. После исчерпания квоты выполнение приостанавливается до её пополнения. Привязка к логическим процессорам не резервирует их исключительно для контейнера, а относительный вес не задаёт абсолютного предела. В cgroups v2 для распределения процессорного времени используется \cmd{cpu.weight} с другой числовой шкалой.
+
+\section{Память и количество процессов}
+
+Объём потребляемой памяти ограничивается в байтах. Параметр \cmd{--memory 128m} задаёт предел в 128~МиБ, причём контроллер учитывает не только анонимные страницы приложения, но и файловый кэш.
+
+При установленном \cmd{--memory} параметр \cmd{--memory-swap} задаёт общий предел памяти и подкачки. Например, сочетание \cmd{--memory 128m} и \cmd{--memory-swap 256m} допускает до 128~МиБ подкачки, если она включена и поддерживается хостом. При равных значениях подкачка для контейнера запрещена. Если параметр не задан, Docker обычно допускает дополнительно объём подкачки, равный лимиту памяти, при наличии такой возможности на хосте.
+
+При достижении жёсткого предела памяти ядро пытается освободить её. Если освободить достаточно памяти не удаётся, механизм OOM (Out of Memory) может завершить один или несколько процессов. В случае завершения основного процесса контейнер останавливается.
+
+Кроме памяти и процессорного времени, можно ограничить количество задач. Например, параметр \cmd{--pids-limit 64} задаёт предел в 64 задачи в контрольной группе. Каждый поток, включая основной поток процесса, учитывается отдельно. При достижении предела попытка создать новую задачу завершается ошибкой.
+
+\section{Наблюдение за ресурсами}
+
+Проверим, как заданные при запуске ограничения отражаются в Docker и интерфейсе ядра. Для эксперимента запустите контейнер с указанными ниже лимитами. Команда \cmd{sleep 600} оставит его работающим в течение десяти минут. Если имя \cmd{course-limits} уже используется, выберите свободное и замените его во всех командах.
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker run -d --name course-limits --cgroupns private \
+    --cpus 0.5 --memory 128m --memory-swap 128m \
+    --pids-limit 64 debian:12-slim sleep 600
+docker stats --no-stream course-limits
+docker top course-limits
+docker inspect course-limits
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Команда \cmd{docker stats} отображает загрузку процессора, потребление памяти, объёмы сетевого и блочного ввода-вывода и количество задач. В Linux показатель 100\% соответствует полной загрузке одного логического процессора, а при расчёте потребления памяти команда вычитает часть файлового кэша. Команда \cmd{docker top} показывает процессы контейнера, а \cmd{docker inspect} позволяет изучить его конфигурацию и состояние.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Чтобы сопоставить параметры Docker с настройками ядра, сначала определите версию cgroups:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker info --format '{{.CgroupVersion}}'
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Если команда вывела 2, прочитайте параметры контрольной группы из работающего контейнера. Благодаря параметру \cmd{--cgroupns private} его контрольная группа представлена внутри контейнера как корень иерархии.
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker exec course-limits cat /sys/fs/cgroup/cpu.max
+docker exec course-limits cat /sys/fs/cgroup/cpu.stat
+docker exec course-limits cat /sys/fs/cgroup/memory.max
+docker exec course-limits cat /sys/fs/cgroup/memory.swap.max
+docker exec course-limits cat /sys/fs/cgroup/memory.current
+docker exec course-limits cat /sys/fs/cgroup/memory.events
+docker exec course-limits cat /sys/fs/cgroup/pids.max
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering
+\begin{tabular}{@{}p{.36\linewidth}p{.58\linewidth}@{}}
+\toprule
+\textbf{Файл} & \textbf{Содержание} \\
+\midrule
+\cmd{cpu.max} & Квота и период в микросекундах \\
+\cmd{cpu.stat} & Статистика CPU, включая ограничения по квоте \\
+\cmd{memory.max} & Жёсткий предел памяти в байтах \\
+\cmd{memory.swap.max} & Предел подкачки в байтах \\
+\cmd{memory.current} & Текущий объём учтённой памяти в байтах \\
+\cmd{memory.events} & Счётчики событий, включая \cmd{oom_kill} \\
+\cmd{pids.max} & Предел числа задач \\
+\bottomrule
+\end{tabular}
+\end{minipage}\par\addvspace{10pt}
+
+При заданных выше лимитах и стандартном периоде квоты в конфигурации с cgroups v2 в файле \cmd{cpu.max} ожидаются значения \cmd{50000 100000}, в \cmd{memory.max} значение \cmd{134217728}, в \cmd{memory.swap.max} значение \cmd{0}, а в \cmd{pids.max} значение \cmd{64}. Если какой-либо файл недоступен, проверьте версию cgroups и конфигурацию Docker.
+
+Убедимся, что квота действительно ограничивает процессорное время, создав кратковременную нагрузку. Если контейнер уже завершился, запустите его через \cmd{docker start course-limits}.
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker exec course-limits cat /sys/fs/cgroup/cpu.stat
+docker exec course-limits timeout 5s sh -c 'while :; do :; done'
+docker exec course-limits cat /sys/fs/cgroup/cpu.stat
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Сравните значение \cmd{nr_throttled} до и после нагрузки. Если счётчик вырос, значит, в течение опыта группа исчерпывала свою квоту процессорного времени. Команда \cmd{timeout} завершает нагрузку через пять секунд и возвращает код 124, если время было превышено. После опыта удалите учебный контейнер:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker rm -f course-limits
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+
+\section{Диагностика OOM}
+
+При диагностике нехватки памяти необходимо отличать завершение процесса механизмом OOM от других причин остановки. Если контейнер неожиданно завершился, проверьте его состояние и журнал. Вместо \cmd{container_name} подставьте имя своего контейнера:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker inspect --format '{{json .State}}' container_name
+docker logs container_name
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Значение \cmd{true} в поле \cmd{OOMKilled} означает, что Docker зарегистрировал событие OOM для контейнера. Код завершения 137 может быть следствием сигнала \cmd{SIGKILL} (128 + 9), например при принудительной остановке, но программа также может вернуть этот код самостоятельно. Для установления причины сопоставьте состояние контейнера с показаниями \cmd{memory.events}, полученными во время его работы, и сообщениями ядра, если доступ к журналу разрешён.
+
+\section{Ограничения в Docker Compose}
+
+Ресурсные ограничения, рассмотренные для отдельных контейнеров, можно также указать в файле \file{compose.yaml} для каждого сервиса. Добавьте следующие поля в описание \cmd{web} из главы \nameref*{ch:22-docker-compose} на одном уровне с \cmd{build}:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,fontsize=\footnotesize]{yaml}
+    cpus: 0.5
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}В каталоге проекта установите учебный пароль, как в главе 22, проверьте конфигурацию и примените её:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+export DB_PASSWORD=course-demo
+docker compose config --quiet
+docker compose up -d
+docker inspect "$(docker compose ps -q web)"
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+В разделе \cmd{HostConfig} вывода команды \cmd{docker inspect} найдите поля \cmd{NanoCpus}, \cmd{Memory}, \cmd{MemorySwap} и \cmd{PidsLimit}. Завершите работу:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker compose down
+unset DB_PASSWORD
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+
 \section{Типичные ошибки}
-\begin{itemize}
-  \item Контейнер убивается «без причины» --- смотрите
-    \cmd{OOMKilled}; увеличьте \cmd{--memory} или
-    оптимизируйте память приложения;
-  \item Лимит CPU слишком низкий --- приложение
-    «замедляется»; измерьте \cmd{docker stats};
-  \item Не заданы лимиты --- один контейнер может
-    занять всю память хоста;
-  \item \cmd{--memory-swap} без \cmd{--memory} ---
-    некорректная конфигурация.
+\begin{itemize}[nosep]
+  \item Сервис работает медленно: сравните загрузку CPU и счётчики ограничения по квоте, прежде чем увеличить лимит.
+  \item Контейнер завершился с кодом 137: не делайте вывод об OOM только по коду.
+  \item Контейнер не может создавать потоки: проверьте предел задач и фактическое количество.
+  \item Не заданы ресурсные ограничения: контейнер может конкурировать за все доступные ресурсы ВМ.
 \end{itemize}
 
 \section{Связь с остальным курсом}
 
-Лимиты настраиваются и в \cmd{docker-compose}
-(\nameref{ch:22-docker-compose}); мониторинг процессов
---- \nameref{ch:12-processes}; распределение памяти ---
-\nameref{ch:16-virtual-memory}.
+Наблюдение за процессами рассмотрено в главе «\nameref*{ch:12-processes}», работа с памятью в главе «\nameref*{ch:16-virtual-memory}», а механизмы изоляции контейнеров в главе «\nameref*{ch:19-docker-basics}».
 
 \section{Задачи для самопроверки}
-\begin{enumerate}
-  \item Что такое cgroups и зачем они нужны
-    контейнерам?
-  \item Как ограничить контейнер 1 CPU и 512 МБ
-    памяти?
-  \item Как узнать, был ли контейнер убит
-    OOM-killer'ом?
-  \item Чем \cmd{--cpus} отличается от
-    \cmd{--cpuset-cpus}?
-  \item Как посмотреть использование ресурсов
-    контейнеров в реальном времени?
+\begin{enumerate}[nosep]
+  \item Чем контрольные группы отличаются от пространств имён?
+  \item Чем квота CPU отличается от привязки к логическим процессорам и относительного веса?
+  \item Как ограничить память контейнера 128 МиБ и запретить подкачку?
+  \item Объясните, почему код завершения 137 недостаточен для диагностики OOM.
+  \item Запустите учебный контейнер и сравните ограничения в выводе Docker и в файлах cgroups v2.
+  \item Как ограничения родительской группы влияют на её потомков в cgroups v2?
+  \item Что учитывает ограничение \cmd{--pids-limit}?
+  \item Какие сведения дают команды \cmd{docker stats}, \cmd{docker top} и \cmd{docker inspect}?
+  \item Как сравнить \cmd{cpu.stat} до и после нагрузки?
+  \item Как перенести ограничения CPU, памяти и числа задач в конфигурацию Compose?
 \end{enumerate}
+\par
+\clearpage
+\endgroup

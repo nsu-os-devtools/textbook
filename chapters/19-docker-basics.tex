@@ -1,125 +1,218 @@
-% Глава: 19-docker-basics
-% Статус: наполнено (первый прогон).
 \chapter{Docker: основы}
 \label{ch:19-docker-basics}
+\begingroup
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.25cm}
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\makeatletter
+\let\@afterindentfalse\@afterindenttrue
+\@afterindenttrue
+\makeatother
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\raggedbottom
+\titlespacing{\section}{0pt}{1.9ex plus .3ex minus .2ex}{.9ex}
+\titlespacing{\subsection}{0pt}{1.8ex plus .3ex minus .2ex}{.9ex}
+\captionsetup[figure]{font=footnotesize,justification=centering,singlelinecheck=false}
+\fvset{breaksymbolleft={},breaksymbolright={}}
 
 \section{Контейнер и виртуальная машина}
 
-\textbf{Виртуальная машина} виртуализует
-\emph{оборудование}: внутри гостевая ОС с ядром,
-драйверами, собственным пространством.
-\textbf{Контейнер} изолирует \emph{процессы}: все
-контейнеры на хосте делят одно ядро Linux, но имеют
-отдельные файловые системы, сетевые
-пространства и PID-пространства.
+Виртуальная машина (ВМ) работает на виртуальном оборудовании, которое предоставляет гипервизор, и имеет собственное ядро гостевой ОС. Контейнеризация основана на другом принципе: изолируются один или несколько процессов, но их системные вызовы обслуживает общее ядро Linux хоста (рис.~\ref*{fig:vm-vs-ct}). Если контейнеры запущены внутри ВМ, общим для них является ядро её гостевой ОС.
 
-На курсе Docker-демон (хост) --- это ваша ВМ на сервере
-\fpath{pglab.nsu.ru}: контейнеры изолируются внутри вашей системы,
-разделяя её ядро и диск.
-
-\begin{figure}[htb]
+\begin{figure}[!htb]
   \centering
-  \begin{tikzpicture}[node distance=0.6cm]
-    \node[layer, minimum width=6cm, minimum height=2.6cm] (vmhost) {};
-    \node[font=\small, above=2pt of vmhost] {Виртуальные машины};
-    \node[process, minimum width=2.4cm] (vm1) at (vmhost) {}; 
-    \node[font=\small] at (vm1) {ВМ: гостевая ОС + ядро};
-    \node[layer, below=1.6cm of vmhost, minimum width=6cm, minimum height=2.6cm] (cghost) {};
-    \node[font=\small, above=2pt of cghost] {Контейнеры};
-    \node[ext, minimum width=1.5cm] (c1) at ([yshift=-0.5cm]cghost.west) [xshift=0.7cm] {app};
-    \node[ext, right=0.3cm of c1, minimum width=1.5cm] (c2) {app};
-    \node[ext, right=0.3cm of c2, minimum width=1.5cm] (c3) {app};
-    \node[font=\small, below=3pt of c2] {общее ядро хоста};
+  \begin{tikzpicture}[node distance=3mm]
+    \node[ext,minimum width=65mm] (hw1) {Оборудование};
+    \node[io,minimum width=65mm,above=of hw1] (hyp) {Гипервизор};
+    \node[ext,minimum width=30mm,above=of hyp,xshift=-17mm] (k1) {Ядро ВМ 1};
+    \node[ext,minimum width=30mm,right=of k1] (k2) {Ядро ВМ 2};
+    \node[process,minimum width=30mm,above=of k1] (a1) {Приложение};
+    \node[process,minimum width=30mm,above=of k2] (a2) {Приложение};
+    \node[layer,fit=(k1)(a1),inner sep=1.5pt] {};
+    \node[layer,fit=(k2)(a2),inner sep=1.5pt] {};
+    \node[ext,minimum width=65mm,right=12mm of hw1] (hw2) {Оборудование};
+    \node[io,minimum width=65mm,above=of hw2] (kern) {Ядро Linux хоста};
+    \node[process,minimum width=30mm,above=10mm of kern,xshift=-17mm] (c1) {Процессы\\контейнера 1};
+    \node[process,minimum width=30mm,right=of c1] (c2) {Процессы\\контейнера 2};
+    \node[layer,fit=(c1),inner sep=1.5pt] {};
+    \node[layer,fit=(c2),inner sep=1.5pt] {};
+    \draw[flow] (c1.south) -- (c1.south |- kern.north);
+    \draw[flow] (c2.south) -- (c2.south |- kern.north);
+    \node[anchor=south,yshift=4mm,font=\small\bfseries]
+      at (hyp.center |- c1.north) {Виртуальные машины};
+    \node[anchor=south,yshift=4mm,font=\small\bfseries]
+      at (kern.center |- c1.north) {Контейнеры};
   \end{tikzpicture}
-  \caption{ВМ изолирует целую ОС, контейнеры --- процессы поверх общего ядра.}
+  \caption{Границы изоляции ВМ и контейнеров. Слева показан гипервизор, работающий непосредственно на оборудовании.}
   \label{fig:vm-vs-ct}
 \end{figure}
 
-Преимущества контейнеров: быстрый запуск (секунды),
-малый размер (сотни МБ), переносимость «от
-разработчика до продакшена».
+Поскольку контейнеры используют общее ядро, при их запуске не требуется загружать отдельную операционную систему. Степень изоляции зависит от конфигурации ядра и среды запуска.
 
 \section{Архитектура Docker}
 
-\begin{itemize}
-  \item \textbf{Docker Engine} (демон \cmd{dockerd}) ---
-    управляющий процесс на хосте;
-  \item \textbf{клиент} (\cmd{docker}) --- команда,
-    которой вы пользуетесь; общается с демоном по
-    API;
-  \item \textbf{образ} (image) --- неизменяемый набор
-    файлов + метаданные; \textbf{контейнер} ---
-    работающий экземпляр образа.
+Для изоляции процессов и управления их ресурсами Docker использует несколько механизмов Linux:
+\begin{itemize}[nosep]
+  \item Пространства имён (namespaces) задают, какие системные ресурсы видит процесс. Пространство имён PID изолирует идентификаторы процессов, \cmd{mount} определяет видимые точки монтирования, \cmd{net} изолирует сетевые интерфейсы и маршруты.
+  \item Контрольные группы (cgroups) учитывают и ограничивают потребление ресурсов группами процессов (глава \nameref*{ch:23-docker-resources}).
+  \item Права доступа и разделение привилегий (capabilities) ограничивают действия процесса. Фильтры \cmd{seccomp} ограничивают системные вызовы.
 \end{itemize}
 
-\section{Ключевые команды}
+Управление данными механизмами выполняет Docker Engine, который предоставляет программный интерфейс (API) для работы с образами и контейнерами. В базовой конфигурации Docker под Linux клиент \cmd{docker} передаёт запрос демону \cmd{dockerd} через Unix-сокет, а демон поручает управление жизненным циклом контейнера компоненту \cmd{containerd}. При запуске \cmd{containerd} использует промежуточный процесс shim, который вызывает \cmd{runc}. Среда выполнения \cmd{runc} настраивает изоляцию и запускает процесс контейнера согласно спецификации OCI (Open Container Initiative).
 
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run hello-world        # скачать и запустить тестовый образ
-docker run -it ubuntu bash    # запустить интерактивный контейнер
-docker ps                     # работающие контейнеры
-docker ps -a                  # все контейнеры, включая остановленные
-docker images                 # локальные образы
-docker exec -it <id> bash     # выполнить команду в работающем контейнере
-docker logs <id>              # stdout/stderr контейнера
-docker stop <id>              # остановить контейнер
-docker start <id>             # запустить остановленный контейнер
-docker rm <id>                # удалить остановленный контейнер
-docker rmi <image>            # удалить образ
-\end{minted}
+\begin{figure}[!htb]
+  \centering
+  \begin{tikzpicture}[node distance=5mm]
+    \node[process] (cli) {\cmd{docker}};
+    \node[process,right=of cli] (d) {\cmd{dockerd}};
+    \node[process,right=of d] (ct) {\cmd{containerd}};
+    \node[process,right=of ct] (shim) {shim};
+    \node[process,right=of shim] (r) {\cmd{runc}};
+    \node[io,below=of r] (p) {Процесс};
+    \draw[flow] (cli) -- (d);
+    \draw[flow] (d) -- (ct);
+    \draw[flow] (ct) -- (shim);
+    \draw[flow] (shim) -- (r);
+    \draw[flow] (r) -- (p);
+  \end{tikzpicture}
+  \caption{Последовательность запуска контейнера в базовой конфигурации Docker.}
+\end{figure}
 
-\cmd{docker run} с флагами:
-\begin{minted}[bgcolor=gray!6]{bash}
-docker run -d -p 8080:80 --name web nginx   # в фоне, маппинг портов
-docker run --rm -it alpine sh               # удалить при выходе
-docker run --name app myimage:1.0           # по имени и тегу образа
+Образ содержит слои файловой системы и параметры запуска приложения. На его основе Docker формирует конфигурацию контейнера и добавляет записываемый слой. После создания контейнер можно многократно запускать и останавливать.
+
+\section{Жизненный цикл контейнера}
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Для изучения жизненного цикла контейнера воспользуемся командами Docker. Сначала проверьте доступ к установленному Docker Engine:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker version
+docker info
 \end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Учитывайте, что в стандартной установке членство в группе \cmd{docker} позволяет управлять привилегированным демоном и фактически предоставляет полномочия, сопоставимые с правами \cmd{root}.
+
+В командах ниже используются имена \cmd{course-box} и \cmd{course-web}. Если они уже заняты, выберите свободные и используйте их во всех командах.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker run -d --name course-box debian:12-slim sleep 600
+docker ps
+docker exec -it course-box bash
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Первая команда создаёт и запускает контейнер, в котором программа \cmd{sleep} работает 600 секунд. Если образ отсутствует локально, Docker предварительно загружает его. Если контейнер уже остановился, запустите его снова командой \cmd{docker start course-box}. Вторая команда показывает работающие контейнеры, а третья запускает дополнительную оболочку внутри контейнера.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}В оболочке контейнера выполните:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+cat /etc/os-release
+tr '\0' ' ' < /proc/1/cmdline
+echo
+touch /tmp/course-file
+exit
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Работа оболочки внутри контейнера не определяет его жизненный цикл. В стандартной конфигурации основной процесс контейнера имеет PID 1 в собственном пространстве имён, а при его завершении контейнер останавливается. Для PID 1 действуют особые правила обработки сигналов, поэтому приложение должно корректно обрабатывать завершение и при необходимости получать статусы дочерних процессов. Выход из дополнительной оболочки, запущенной через \cmd{docker exec}, основной процесс не останавливает.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\setlength{\parindent}{0pt}\noindent\hspace*{1.25cm}Проверим, сохраняется ли созданный файл после остановки и повторного запуска контейнера:\par\kern 10pt
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker stop course-box
+docker ps -a
+docker start course-box
+docker exec course-box ls /tmp/course-file
+docker stop course-box
+docker rm course-box
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Созданный файл сохраняется, поскольку при повторном запуске используется тот же контейнер. Основные команды управления контейнерами:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering\small\begin{tabular}{@{}>{\raggedright\arraybackslash}p{.38\linewidth}>{\raggedright\arraybackslash}p{.56\linewidth}@{}}
+\toprule
+\textbf{Команда} & \textbf{Назначение} \\
+\midrule
+\cmd{docker run} & Создать и запустить новый контейнер \\
+\cmd{docker start} & Запустить существующий остановленный контейнер \\
+\cmd{docker restart} & Остановить и снова запустить тот же контейнер \\
+\cmd{docker exec} & Выполнить команду в работающем контейнере \\
+\cmd{docker ps -a} & Показать все контейнеры, включая остановленные \\
+\cmd{docker logs} & Просмотреть доступные журналы контейнера \\
+\cmd{docker inspect} & Посмотреть конфигурацию и состояние \\
+\cmd{docker stop} & Остановить контейнер \\
+\cmd{docker rm} & Удалить остановленный контейнер и его записываемый слой \\
+\bottomrule\end{tabular}\end{minipage}\par\addvspace{10pt}
+
+При остановке через \cmd{stop} основной процесс получает настроенный сигнал (обычно \cmd{SIGTERM}). Если процесс не завершится за отведённое время, Docker отправит \cmd{SIGKILL}.
 
 \section{Образы и реестры}
 
-\textbf{Реестр} (registry) --- хранилище образов;
-основной публичный --- Docker Hub.
-\textbf{Тег} (tag) --- метка версии в имени образа:
-\cmd{nginx:1.25}, \cmd{nginx:latest}.
-\begin{minted}[bgcolor=gray!6]{bash}
-docker pull nginx:1.25           # скачать конкретную версию
-docker tag myimage:1.0 me/myimage:1.0   # переименовать для push
-docker push me/myimage:1.0       # загрузить, после login
-\end{minted}
+Чтобы использовать один и тот же образ на разных машинах, его можно разместить в реестре, предназначенном для хранения и распространения образов. Пример публичного реестра: Docker Hub. В имени \cmd{debian:12-slim} часть \cmd{debian} обозначает репозиторий, а \cmd{12-slim} является тегом. Один тег со временем может указывать на разное содержимое. Для точной идентификации манифеста образа или индекса манифестов используют дайджест (digest), например ссылку с \cmd{@sha256:...}.
 
+Для работы с образами используются следующие команды:
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\centering\small\begin{tabular}{@{}>{\raggedright\arraybackslash}p{.38\linewidth}>{\raggedright\arraybackslash}p{.56\linewidth}@{}}
+\toprule
+\textbf{Команда} & \textbf{Назначение} \\
+\midrule
+\cmd{docker pull debian:12-slim} & Загрузить образ из реестра \\
+\cmd{docker image ls} & Показать локальные образы \\
+\cmd{docker image inspect} & Посмотреть сведения об образе \\
+\cmd{docker tag} & Добавить имя и тег для образа \\
+\cmd{docker push} & Отправить образ в реестр при наличии необходимых прав \\
+\cmd{docker image rm} & Удалить локальную ссылку или образ \\
+\bottomrule\end{tabular}\end{minipage}\par\addvspace{10pt}
+
+\section{Сеть и публикация портов}
+
+Сетевая изоляция контейнера позволяет приложению использовать собственные сетевые интерфейсы и порты. В стандартной bridge-сети контейнер имеет отдельное сетевое пространство имён, сетевой интерфейс и IP-адрес. Пара виртуальных интерфейсов соединяет контейнер с программным мостом хоста. Адрес \cmd{localhost} внутри контейнера относится к его собственному сетевому пространству. Для доступа к приложению через порт хоста этот порт можно опубликовать при запуске контейнера.
+
+\par\addvspace{10pt}\noindent\begin{minipage}{\linewidth}
+\begin{minted}[bgcolor=gray!6,breaklines=false,fontsize=\footnotesize]{bash}
+docker run -d --name course-web \
+    -p 127.0.0.1:8080:80 nginx:1.30
+curl --fail --retry 5 --retry-all-errors http://127.0.0.1:8080/
+docker logs course-web
+docker stop course-web
+docker rm course-web
+\end{minted}
+\end{minipage}\par\addvspace{10pt}
+
+Запросы к порту 8080 ВМ перенаправляются на порт 80 контейнера. Начиная с Docker Engine 28.0.0, в стандартной bridge-сети указание \cmd{127.0.0.1} ограничивает доступ к опубликованному порту самим хостом. Если порт 8080 занят, укажите свободный порт хоста в параметре \cmd{-p} и в команде \cmd{curl}.
+
+\begin{samepage}
 \section{Типичные ошибки}
-\begin{itemize}
-  \item \emph{permission denied} на \fpath{/var/run/docker.sock}
-    --- пользователь не в группе \cmd{docker}; добавьте
-    (\cmd{sudo usermod -aG docker \$USER}), перезайдите.
-  \item Контейнер сразу завершился --- проверьте
-    \cmd{docker logs}; часто причина --- отсутствующий
-    \cmd{CMD} в Dockerfile.
-  \item Порт «не отвечает» --- не задан \cmd{-p host:container}.
-  \item Изменения в контейнере потерялись после
-    перезапуска --- данные хранятся в слое контейнера;
-    для сохранения нужны volumes (\nameref{ch:21-docker-data}).
+\begin{itemize}[nosep]
+  \item Нет доступа к Docker: проверьте \cmd{docker version}, активный контекст и права. Не открывайте сокет всем пользователям.
+  \item Контейнер сразу остановился: проверьте \cmd{docker ps -a}, \cmd{docker logs} и \cmd{docker inspect}. Одноразовая команда может завершиться штатно.
+  \item Порт недоступен: проверьте публикацию, адрес прослушивания приложения и состояние контейнера.
+  \item Данные исчезли после пересоздания: используйте внешнее хранилище (глава \nameref*{ch:21-docker-data}).
 \end{itemize}
 
 \section{Связь с остальным курсом}
 
-Создание образа --- Dockerfile
-(\nameref{ch:20-dockerfile}); хранение данных ---
-\nameref{ch:21-docker-data}; несколько контейнеров ---
-\nameref{ch:22-docker-compose}; ограничения ресурсов ---
-\nameref{ch:23-docker-resources}. Внутрь контейнера
-можно войти \cmd{docker exec} и поработать
-в tmux (\nameref{ch:10-tmux}) или Vim
-(\nameref{ch:09-vim}).
+Механизмы изоляции опираются на материал глав «\nameref*{ch:12-processes}» и «\nameref*{ch:18-ipc}». Создание образов рассмотрено в главе «\nameref*{ch:20-dockerfile}», а совместный запуск сервисов в главе «\nameref*{ch:22-docker-compose}».
 
 \section{Задачи для самопроверки}
-\begin{enumerate}
-  \item Чем контейнер отличается от виртуальной
-    машины?
-  \item Что такое образ и что такое контейнер?
-  \item Как запустить интерактивный контейнер с
-    bash и как из него выйти?
-  \item Как посмотреть логи завершившегося
-    контейнера?
-  \item Зачем нужны теги образов?
+\begin{enumerate}[nosep]
+  \item Чем ВМ отличается от контейнера на уровне ядра?
+  \item Объясните назначение пространств имён и контрольных групп.
+  \item Чем различаются \cmd{run}, \cmd{start} и \cmd{exec}?
+  \item Проверьте сохранение файла после остановки и повторного запуска контейнера.
+  \item Почему тег образа не является неизменяемым идентификатором? Что означают два порта в параметре \cmd{-p}?
+  \item Как взаимодействуют клиент \cmd{docker}, \cmd{dockerd}, \cmd{containerd} и \cmd{runc}?
+  \item Чем образ отличается от контейнера и для чего нужен реестр?
+  \item Что происходит при завершении основного процесса контейнера?
+  \item Что делают команды \cmd{docker stop} и \cmd{docker rm}?
+  \item Почему доступ к сокету привилегированного демона требует осторожности?
 \end{enumerate}
+\end{samepage}
+\par
+\clearpage
+\endgroup
